@@ -3,5 +3,5 @@
     <Platform Name="x64" />
     <Platform Name="x86" />
   </Configurations>
-  <Project Path="PerfumeVendingMachine/PerfumeVendingMachine.vcxproj" />
+  <Project Path="PerfumeVendingMachine/PerfumeVendingMachine.vcxproj" Id="4a9fe0bf-6ba6-4e8f-a75e-ce77b4115c91" />
 </Solution>
