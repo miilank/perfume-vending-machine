@@ -148,14 +148,56 @@
     <ClCompile Include="EBO.cpp" />
     <ClCompile Include="Main.cpp" />
     <ClCompile Include="shaderClass.cpp" />
+    <ClCompile Include="Texture.cpp" />
+    <ClCompile Include="Util.cpp" />
     <ClCompile Include="VAO.cpp" />
     <ClCompile Include="VBO.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="EBO.h" />
     <ClInclude Include="shaderClass.h" />
+    <ClInclude Include="Texture.h" />
     <ClInclude Include="VAO.h" />
     <ClInclude Include="VBO.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="Resources\background.png" />
+    <Image Include="Resources\bottle_1.png" />
+    <Image Include="Resources\bottle_2.png" />
+    <Image Include="Resources\bottle_3.png" />
+    <Image Include="Resources\bottle_4.png" />
+    <Image Include="Resources\bottle_5.png" />
+    <Image Include="Resources\button_1.png" />
+    <Image Include="Resources\button_1_pressed.png" />
+    <Image Include="Resources\button_2.png" />
+    <Image Include="Resources\button_2_pressed.png" />
+    <Image Include="Resources\button_3.png" />
+    <Image Include="Resources\button_3_pressed.png" />
+    <Image Include="Resources\button_4.png" />
+    <Image Include="Resources\button_4_pressed.png" />
+    <Image Include="Resources\button_5.png" />
+    <Image Include="Resources\button_5_pressed.png" />
+    <Image Include="Resources\card.png" />
+    <Image Include="Resources\card_reader.png" />
+    <Image Include="Resources\coin.png" />
+    <Image Include="Resources\coin_slot.png" />
+    <Image Include="Resources\cursor.png" />
+    <Image Include="Resources\digits.png" />
+    <Image Include="Resources\info_0.png" />
+    <Image Include="Resources\info_1.png" />
+    <Image Include="Resources\info_2.png" />
+    <Image Include="Resources\info_3.png" />
+    <Image Include="Resources\info_4.png" />
+    <Image Include="Resources\info_5.png" />
+    <Image Include="Resources\label_paid.png" />
+    <Image Include="Resources\label_price.png" />
+    <Image Include="Resources\label_rsd.png" />
+    <Image Include="Resources\machine_body.png" />
+    <Image Include="Resources\name_label.png" />
+    <Image Include="Resources\nozzle.png" />
+    <Image Include="Resources\screen.png" />
+    <Image Include="Resources\showcase.png" />
+    <Image Include="Resources\spray_cloud.png" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

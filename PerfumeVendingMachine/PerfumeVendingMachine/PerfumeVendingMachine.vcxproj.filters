@@ -39,12 +39,15 @@
     <ClCompile Include="shaderClass.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Texture.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Util.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="EBO.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="VBO.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="VAO.h">
@@ -53,5 +56,124 @@
     <ClInclude Include="shaderClass.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="VBO.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Texture.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="Resources\background.png">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="Resources\bottle_1.png">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="Resources\bottle_2.png">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="Resources\bottle_3.png">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="Resources\bottle_4.png">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="Resources\bottle_5.png">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="Resources\button_1.png">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="Resources\button_1_pressed.png">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="Resources\button_2.png">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="Resources\button_2_pressed.png">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="Resources\button_3.png">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="Resources\button_3_pressed.png">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="Resources\button_4.png">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="Resources\button_4_pressed.png">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="Resources\button_5.png">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="Resources\button_5_pressed.png">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="Resources\card.png">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="Resources\card_reader.png">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="Resources\coin.png">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="Resources\coin_slot.png">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="Resources\cursor.png">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="Resources\digits.png">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="Resources\info_0.png">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="Resources\info_1.png">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="Resources\info_2.png">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="Resources\info_3.png">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="Resources\info_4.png">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="Resources\info_5.png">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="Resources\label_paid.png">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="Resources\label_price.png">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="Resources\label_rsd.png">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="Resources\machine_body.png">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="Resources\name_label.png">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="Resources\nozzle.png">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="Resources\screen.png">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="Resources\showcase.png">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="Resources\spray_cloud.png">
+      <Filter>Resource Files</Filter>
+    </Image>
   </ItemGroup>
 </Project>
