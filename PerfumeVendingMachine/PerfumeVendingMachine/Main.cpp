@@ -3,6 +3,7 @@
 
 #include <iostream>
 #include <string>
+#include <algorithm>
 
 #include "shaderClass.h"
 #include "VAO.h"
@@ -13,6 +14,10 @@
 const double TARGET_FPS = 75.0;
 const double TARGET_FRAME_TIME = 1.0 / TARGET_FPS;
 
+// Size of machine_body.png; every machine part is placed in these pixel coordinates
+const float MACHINE_W = 900.0f;
+const float MACHINE_H = 1000.0f;
+
 struct Rect {
 	float cx, cy, w, h;
 	bool contains(float x, float y) const {
@@ -22,17 +27,40 @@ struct Rect {
 
 int screenW = 1920, screenH = 1080;
 
+float machineScale = 1.0f;
+float machineLeft = 0.0f;
+float machineTop = 0.0f;
+
+// HELPERS
 int endProgram(std::string message) {
 	std::cout << message << std::endl;
 	glfwTerminate();
 	return -1;
 }
 
+void updateLayout() {
+	machineScale = screenH * 0.94f / MACHINE_H;
+	float machineWidth = MACHINE_W * machineScale;
+	machineLeft = (std::max)(screenW * 0.02f, screenW * 0.40f - machineWidth / 2.0f);
+	machineTop = screenH / 2.0f + MACHINE_H * machineScale / 2.0f;
+}
+
+// Machine coordinates (origin top-left of machine_body.png, y down) to screen pixels (origin bottom-left, y up)
+float toScreenX(float mx) { return machineLeft + mx * machineScale; }
+float toScreenY(float my) { return machineTop - my * machineScale; }
+
+Rect machineRect(float x0, float y0, float x1, float y1) {
+	return Rect{ toScreenX((x0 + x1) / 2.0f), toScreenY((y0 + y1) / 2.0f),
+				 (x1 - x0) * machineScale, (y1 - y0) * machineScale };
+}
+
+// CALLBACKS
 void keyboardCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
 	if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
 		glfwSetWindowShouldClose(window, GLFW_TRUE);
 }
 
+// DRAWING
 Shader* gShader = nullptr;
 
 void setCommonUniforms(const Rect& r, float alpha, int shape) {
@@ -84,6 +112,7 @@ int main()
 
 	glfwGetFramebufferSize(window, &screenW, &screenH);
 	glViewport(0, 0, screenW, screenH);
+	updateLayout();
 
 	Shader shaderProgram("default.vert", "default.frag");
 	gShader = &shaderProgram;
@@ -110,7 +139,7 @@ int main()
 	EBO1.Unbind();
 
 	Texture texBackground("res/background.png", GL_TEXTURE_2D, GL_TEXTURE0);
-	Texture texCoin("res/coin.png", GL_TEXTURE_2D, GL_TEXTURE0);
+	Texture texBody("res/machine_body.png", GL_TEXTURE_2D, GL_TEXTURE0);
 
 	texBackground.texUnit(shaderProgram, "tex0", 0);
 	shaderProgram.Activate();
@@ -128,10 +157,12 @@ int main()
 		shaderProgram.Activate();
 		VAO1.Bind();
 
+		float s = machineScale;
+
 		drawTexture(texBackground, Rect{ screenW / 2.0f, screenH / 2.0f, (float)screenW, (float)screenH });
-		float coinSize = screenH * 0.25f;
-		drawTexture(texCoin, Rect{ screenW * 0.4f, screenH / 2.0f, coinSize, coinSize });
-		drawTexture(texCoin, Rect{ screenW * 0.6f, screenH / 2.0f, coinSize, coinSize }, 0.5f);
+		Rect body = machineRect(0.0f, 0.0f, MACHINE_W, MACHINE_H);
+		drawColor(Rect{ body.cx + 16.0f * s, body.cy - 30.0f * s, body.w - 40.0f * s, body.h - 40.0f * s }, 0.0f, 0.0f, 0.0f, 0.3f);
+		drawTexture(texBody, body);
 		glfwSwapBuffers(window);
 		glfwPollEvents();
 
@@ -139,7 +170,7 @@ int main()
 	}
 
 	texBackground.Delete();
-	texCoin.Delete();
+	texBody.Delete();
 
 	VAO1.Delete();
 	VBO1.Delete();
