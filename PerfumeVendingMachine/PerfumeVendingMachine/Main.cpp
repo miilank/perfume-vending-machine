@@ -2,8 +2,10 @@
 #include <GLFW/glfw3.h>
 
 #include <iostream>
+#include <cmath>
 #include <string>
 #include <algorithm>
+#include <vector>
 
 #include "shaderClass.h"
 #include "VAO.h"
@@ -16,9 +18,20 @@
 const double TARGET_FPS = 75.0;
 const double TARGET_FRAME_TIME = 1.0 / TARGET_FPS;
 
+const int PERFUME_COUNT = 5;
+const float PERFUME_COLORS[PERFUME_COUNT][3] = {
+	{ 235 / 255.0f, 200 / 255.0f,  50 / 255.0f },
+	{ 225 / 255.0f, 110 / 255.0f, 150 / 255.0f },
+	{ 90 / 255.0f, 170 / 255.0f, 100 / 255.0f },
+	{ 70 / 255.0f, 140 / 255.0f, 220 / 255.0f },
+	{ 140 / 255.0f,  80 / 255.0f, 180 / 255.0f },
+};
+
 // Size of machine_body.png; every machine part is placed in these pixel coordinates
 const float MACHINE_W = 900.0f;
 const float MACHINE_H = 1000.0f;
+
+const float BUTTON_PRESS_TIME = 0.18f;
 
 // TYPES
 struct Rect {
@@ -34,6 +47,13 @@ int screenW = 1920, screenH = 1080;
 float machineScale = 1.0f;
 float machineLeft = 0.0f;
 float machineTop = 0.0f;
+
+int selected = -1;
+
+float buttonPressTimer[PERFUME_COUNT] = { 0 };
+
+float mouseX = 0.0f, mouseY = 0.0f;
+float timeNow = 0.0f;
 
 GLFWcursor* cursorBottle = nullptr;
 
@@ -60,10 +80,61 @@ Rect machineRect(float x0, float y0, float x1, float y1) {
 				 (x1 - x0) * machineScale, (y1 - y0) * machineScale };
 }
 
+float slotCenterX(int i) { return 130.0f + 160.0f * i; }
+
+Rect bottleRect(int i) { float c = slotCenterX(i); return machineRect(c - 47.5f, 172.0f, c + 47.5f, 362.0f); }
+Rect bottleGlow(int i) { float c = slotCenterX(i); return machineRect(c - 85.0f, 150.0f, c + 85.0f, 385.0f); }
+Rect nozzleRect(int i) { float c = slotCenterX(i); return machineRect(c - 25.0f, 413.0f, c + 25.0f, 473.0f); }
+Rect buttonRect(int i) { float c = slotCenterX(i); return machineRect(c - 38.0f, 492.0f, c + 38.0f, 568.0f); }
+
+Rect showcaseRect() { return machineRect(50.0f, 130.0f, 850.0f, 400.0f); }
+Rect screenRect() { return machineRect(70.0f, 616.0f, 450.0f, 856.0f); }
+
+// GAME LOGIC
+void selectPerfume(int i) {
+	selected = i;
+}
+
+void pressButton(int i) {
+	buttonPressTimer[i] = BUTTON_PRESS_TIME;
+	selectPerfume(i);
+}
+void updateMouse(GLFWwindow* window) {
+	double xpos, ypos;
+	glfwGetCursorPos(window, &xpos, &ypos);
+	int winW, winH;
+	glfwGetWindowSize(window, &winW, &winH);
+	if (winW <= 0 || winH <= 0) return;
+	mouseX = (float)(xpos * screenW / winW);
+	mouseY = (float)(screenH - ypos * screenH / winH);
+}
+
+void update(float dt) {
+	for (int i = 0; i < PERFUME_COUNT; i++)
+		buttonPressTimer[i] = (std::max)(0.0f, buttonPressTimer[i] - dt);
+}
+
 // CALLBACKS
 void keyboardCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
 	if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
 		glfwSetWindowShouldClose(window, GLFW_TRUE);
+
+	if (action == GLFW_PRESS && key >= GLFW_KEY_1 && key <= GLFW_KEY_5)
+		pressButton(key - GLFW_KEY_1);
+}
+
+void mouseCallback(GLFWwindow* window, int button, int action, int mods) {
+	if (action != GLFW_PRESS) return;
+	updateMouse(window);
+	if (button != GLFW_MOUSE_BUTTON_LEFT) return;
+
+	for (int i = 0; i < PERFUME_COUNT; i++) {
+		if (buttonRect(i).contains(mouseX, mouseY)) { pressButton(i); return; }
+		if (bottleRect(i).contains(mouseX, mouseY)) {
+			selectPerfume(i);
+			return;
+		}
+	}
 }
 
 // DRAWING
@@ -114,6 +185,7 @@ int main()
 
 	glfwSwapInterval(0);
 	glfwSetKeyCallback(window, keyboardCallback);
+	glfwSetMouseButtonCallback(window, mouseCallback);
 
 	cursorBottle = loadImageToCursor("res/cursor.png", 20, 3);
 	glfwSetCursor(window, cursorBottle);
@@ -150,7 +222,20 @@ int main()
 
 	Texture texBackground("res/background.png", GL_TEXTURE_2D, GL_TEXTURE0);
 	Texture texBody("res/machine_body.png", GL_TEXTURE_2D, GL_TEXTURE0);
+	Texture texShowcase("res/showcase.png", GL_TEXTURE_2D, GL_TEXTURE0);
+	Texture texNozzle("res/nozzle.png", GL_TEXTURE_2D, GL_TEXTURE0);
+	Texture texScreen("res/screen.png", GL_TEXTURE_2D, GL_TEXTURE0);
 	Texture texName("res/name_label.png", GL_TEXTURE_2D, GL_TEXTURE0);
+
+	std::vector<Texture> texBottles, texButtons, texButtonsPressed, texInfo;
+	texInfo.push_back(Texture("res/info_0.png", GL_TEXTURE_2D, GL_TEXTURE0));
+	for (int i = 1; i <= PERFUME_COUNT; i++) {
+		std::string n = std::to_string(i);
+		texBottles.push_back(Texture(("res/bottle_" + n + ".png").c_str(), GL_TEXTURE_2D, GL_TEXTURE0));
+		texButtons.push_back(Texture(("res/button_" + n + ".png").c_str(), GL_TEXTURE_2D, GL_TEXTURE0));
+		texButtonsPressed.push_back(Texture(("res/button_" + n + "_pressed.png").c_str(), GL_TEXTURE_2D, GL_TEXTURE0));
+		texInfo.push_back(Texture(("res/info_" + n + ".png").c_str(), GL_TEXTURE_2D, GL_TEXTURE0));
+	}
 
 	texBackground.texUnit(shaderProgram, "tex0", 0);
 	shaderProgram.Activate();
@@ -160,9 +245,18 @@ int main()
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
+	double lastFrame = glfwGetTime();
+
 	while (!glfwWindowShouldClose(window))
 	{
 		double frameStart = glfwGetTime();
+		float dt = (float)(frameStart - lastFrame);
+		lastFrame = frameStart;
+		if (dt > 0.1f) dt = 0.1f;
+		timeNow = (float)frameStart;
+
+		updateMouse(window);
+		update(dt);
 
 		glClear(GL_COLOR_BUFFER_BIT);
 		shaderProgram.Activate();
@@ -175,6 +269,30 @@ int main()
 		Rect body = machineRect(0.0f, 0.0f, MACHINE_W, MACHINE_H);
 		drawColor(Rect{ body.cx + 16.0f * s, body.cy - 30.0f * s, body.w - 40.0f * s, body.h - 40.0f * s }, 0.0f, 0.0f, 0.0f, 0.3f);
 		drawTexture(texBody, body);
+
+		// Showcase: glow, bottles, glass
+		if (selected >= 0) {
+			const float* c = PERFUME_COLORS[selected];
+			float pulse = 0.55f + 0.15f * sinf(timeNow * 3.0f);
+			drawColor(bottleGlow(selected), c[0], c[1], c[2], pulse, 2);
+		}
+		for (int i = 0; i < PERFUME_COUNT; i++) {
+			float shade = (selected >= 0 && i != selected) ? 0.6f : 1.0f;
+			drawTexture(texBottles[i], bottleRect(i), 1.0f, shade, shade, shade);
+		}
+		drawTexture(texShowcase, showcaseRect());
+
+		// Nozzles and buttons
+		for (int i = 0; i < PERFUME_COUNT; i++) {
+			drawTexture(texNozzle, nozzleRect(i));
+			Texture& btn = buttonPressTimer[i] > 0.0f ? texButtonsPressed[i] : texButtons[i];
+			drawTexture(btn, buttonRect(i));
+		}
+
+		// Info screen
+		Rect scr = screenRect();
+		drawTexture(texScreen, scr);
+		drawTexture(texInfo[selected >= 0 ? selected + 1 : 0], scr);
 
 		// Semi-transparent name label in the top right corner
 		{
@@ -192,9 +310,17 @@ int main()
 		while (glfwGetTime() - frameStart < TARGET_FRAME_TIME) {}
 	}
 
+	// Cleanup
 	texBackground.Delete();
 	texBody.Delete();
+	texShowcase.Delete();
+	texNozzle.Delete();
+	texScreen.Delete();
 	texName.Delete();
+	for (Texture& t : texBottles) t.Delete();
+	for (Texture& t : texButtons) t.Delete();
+	for (Texture& t : texButtonsPressed) t.Delete();
+	for (Texture& t : texInfo) t.Delete();
 
 	VAO1.Delete();
 	VBO1.Delete();
