@@ -11,6 +11,7 @@
 #include "EBO.h"
 #include "Texture.h"
 
+// SETTINGS
 const double TARGET_FPS = 75.0;
 const double TARGET_FRAME_TIME = 1.0 / TARGET_FPS;
 
@@ -18,6 +19,7 @@ const double TARGET_FRAME_TIME = 1.0 / TARGET_FPS;
 const float MACHINE_W = 900.0f;
 const float MACHINE_H = 1000.0f;
 
+// TYPES
 struct Rect {
 	float cx, cy, w, h;
 	bool contains(float x, float y) const {
@@ -25,6 +27,7 @@ struct Rect {
 	}
 };
 
+// GLOBAL STATE
 int screenW = 1920, screenH = 1080;
 
 float machineScale = 1.0f;
@@ -140,6 +143,7 @@ int main()
 
 	Texture texBackground("res/background.png", GL_TEXTURE_2D, GL_TEXTURE0);
 	Texture texBody("res/machine_body.png", GL_TEXTURE_2D, GL_TEXTURE0);
+	Texture texName("res/name_label.png", GL_TEXTURE_2D, GL_TEXTURE0);
 
 	texBackground.texUnit(shaderProgram, "tex0", 0);
 	shaderProgram.Activate();
@@ -159,10 +163,22 @@ int main()
 
 		float s = machineScale;
 
+		// background and machine
 		drawTexture(texBackground, Rect{ screenW / 2.0f, screenH / 2.0f, (float)screenW, (float)screenH });
 		Rect body = machineRect(0.0f, 0.0f, MACHINE_W, MACHINE_H);
 		drawColor(Rect{ body.cx + 16.0f * s, body.cy - 30.0f * s, body.w - 40.0f * s, body.h - 40.0f * s }, 0.0f, 0.0f, 0.0f, 0.3f);
 		drawTexture(texBody, body);
+
+		// Semi-transparent name label in the top right corner
+		{
+			float margin = screenH * 0.02f;
+			float h = screenH * 0.045f;
+			float w = h * texName.width / (float)texName.height;
+			float maxW = screenW - toScreenX(MACHINE_W) - 2.0f * margin;
+			if (w > maxW && maxW > 0.0f) { w = maxW; h = w * texName.height / (float)texName.width; }
+			drawTexture(texName, Rect{ screenW - margin - w / 2.0f, screenH - margin - h / 2.0f, w, h }, 0.75f);
+		}
+
 		glfwSwapBuffers(window);
 		glfwPollEvents();
 
@@ -171,6 +187,7 @@ int main()
 
 	texBackground.Delete();
 	texBody.Delete();
+	texName.Delete();
 
 	VAO1.Delete();
 	VBO1.Delete();
