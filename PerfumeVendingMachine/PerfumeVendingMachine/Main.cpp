@@ -10,6 +10,7 @@
 #include "VBO.h"
 #include "EBO.h"
 #include "Texture.h"
+#include "Util.h"
 
 // SETTINGS
 const double TARGET_FPS = 75.0;
@@ -33,6 +34,8 @@ int screenW = 1920, screenH = 1080;
 float machineScale = 1.0f;
 float machineLeft = 0.0f;
 float machineTop = 0.0f;
+
+GLFWcursor* cursorBottle = nullptr;
 
 // HELPERS
 int endProgram(std::string message) {
@@ -92,6 +95,7 @@ void drawColor(const Rect& r, float red, float green, float blue, float alpha, i
 	glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 }
 
+// MAIN
 int main()
 {
 	if (!glfwInit()) {
@@ -110,6 +114,9 @@ int main()
 
 	glfwSwapInterval(0);
 	glfwSetKeyCallback(window, keyboardCallback);
+
+	cursorBottle = loadImageToCursor("res/cursor.png", 20, 3);
+	glfwSetCursor(window, cursorBottle);
 
 	if (glewInit() != GLEW_OK) return endProgram("Failed to initialize GLEW.");
 
@@ -193,6 +200,8 @@ int main()
 	VBO1.Delete();
 	EBO1.Delete();
 	shaderProgram.Delete();
+
+	glfwDestroyCursor(cursorBottle);
 
 	glfwDestroyWindow(window);
 	glfwTerminate();
