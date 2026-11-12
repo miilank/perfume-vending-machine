@@ -36,6 +36,8 @@ const float MACHINE_W = 900.0f;
 const float MACHINE_H = 1000.0f;
 
 const float COIN_ANIM_TIME = 0.45f;
+const float CARD_MOVE_TIME = 0.3f;
+const float CARD_PROCESS_TIME = 1.6f;
 const float BUTTON_PRESS_TIME = 0.18f;
 
 // ---------------------------------------------------------------------------
@@ -52,10 +54,11 @@ enum MachineState {
 	STATE_IDLE,            // nothing selected
 	STATE_SELECTED,        // perfume selected, nothing paid yet
 	STATE_PAYING,          // part of the price paid with coins
+	STATE_CARD_PROCESSING, // card is at the reader
 	STATE_READY            // paid, waiting for the button
 };
 
-enum Hand { HAND_EMPTY, HAND_COIN };
+enum Hand { HAND_EMPTY, HAND_COIN, HAND_CARD };
 
 // ---------------------------------------------------------------------------
 // Global state
@@ -72,16 +75,21 @@ int selected = -1;
 int paid = 0;
 
 float buttonPressTimer[PERFUME_COUNT] = { 0 };
+float ledGreenTimer = 0.0f;
 
 bool coinAnimActive = false;
 float coinAnimT = 0.0f;
 float coinStartX = 0.0f, coinStartY = 0.0f;
+
+float cardT = 0.0f;
+float cardStartX = 0.0f, cardStartY = 0.0f;
 
 float mouseX = 0.0f, mouseY = 0.0f;
 float timeNow = 0.0f;
 
 GLFWcursor* cursorBottle = nullptr;
 GLFWcursor* cursorCoin = nullptr;
+GLFWcursor* cursorCard = nullptr;
 Hand cursorHand = HAND_EMPTY;
 
 // ---------------------------------------------------------------------------
@@ -133,6 +141,8 @@ Rect buttonGlow(int i) { float c = slotCenterX(i); return machineRect(c - 60.0f,
 Rect showcaseRect() { return machineRect(50.0f, 130.0f, 850.0f, 400.0f); }
 Rect screenRect() { return machineRect(70.0f, 616.0f, 450.0f, 856.0f); }
 Rect coinSlotRect() { return machineRect(500.0f, 650.0f, 620.0f, 830.0f); }
+Rect cardReaderRect() { return machineRect(640.0f, 650.0f, 840.0f, 790.0f); }
+Rect ledRect() { return machineRect(726.0f, 670.0f, 754.0f, 698.0f); }
 
 Rect walletMatRect() {
 	float right = toScreenX(MACHINE_W);
@@ -147,11 +157,17 @@ Rect walletCoinRect() {
 	return Rect{ mat.cx, mat.cy + mat.h * 0.22f, size, size };
 }
 
+Rect walletCardRect() {
+	Rect mat = walletMatRect();
+	float w = (std::min)(screenH * 0.16f, mat.w * 0.85f);
+	return Rect{ mat.cx, mat.cy - mat.h * 0.18f, w, w * 160.0f / 256.0f };
+}
+
 // ---------------------------------------------------------------------------
 // Game logic
 // ---------------------------------------------------------------------------
 bool isBusy() {
-	return coinAnimActive;
+	return coinAnimActive || state == STATE_CARD_PROCESSING;
 }
 
 void selectPerfume(int i) {
@@ -177,6 +193,17 @@ void insertCoin() {
 	coinStartY = mouseY;
 }
 
+void useCard() {
+	if (selected < 0 || paid >= PRICES[selected] || isBusy()) {
+		return;
+	}
+	state = STATE_CARD_PROCESSING;
+	cardT = 0.0f;
+	cardStartX = mouseX;
+	cardStartY = mouseY;
+	hand = HAND_EMPTY;
+}
+
 void updateMouse(GLFWwindow* window) {
 	double xpos, ypos;
 	glfwGetCursorPos(window, &xpos, &ypos);
@@ -190,6 +217,7 @@ void updateMouse(GLFWwindow* window) {
 void update(float dt) {
 	for (int i = 0; i < PERFUME_COUNT; i++)
 		buttonPressTimer[i] = (std::max)(0.0f, buttonPressTimer[i] - dt);
+	ledGreenTimer = (std::max)(0.0f, ledGreenTimer - dt);
 
 	if (coinAnimActive) {
 		coinAnimT += dt;
@@ -198,10 +226,20 @@ void update(float dt) {
 			paid += COIN_VALUE;
 			if (paid >= PRICES[selected]) {
 				state = STATE_READY;
+				ledGreenTimer = 1.0f;
 			}
 			else {
 				state = STATE_PAYING;
 			}
+		}
+	}
+
+	if (state == STATE_CARD_PROCESSING) {
+		cardT += dt;
+		if (cardT >= CARD_MOVE_TIME + CARD_PROCESS_TIME) {
+			paid = PRICES[selected];
+			state = STATE_READY;
+			ledGreenTimer = 1.0f;
 		}
 	}
 }
@@ -232,8 +270,14 @@ void mouseCallback(GLFWwindow* window, int button, int action, int mods) {
 		if (walletCoinRect().contains(mouseX, mouseY)) return;
 		hand = HAND_EMPTY;
 	}
+	if (hand == HAND_CARD) {
+		if (cardReaderRect().contains(mouseX, mouseY)) { useCard(); return; }
+		hand = HAND_EMPTY;
+		if (walletCardRect().contains(mouseX, mouseY)) return;
+	}
 
 	if (walletCoinRect().contains(mouseX, mouseY)) { hand = HAND_COIN; return; }
+	if (walletCardRect().contains(mouseX, mouseY) && state != STATE_CARD_PROCESSING) { hand = HAND_CARD; return; }
 
 	for (int i = 0; i < PERFUME_COUNT; i++) {
 		if (buttonRect(i).contains(mouseX, mouseY)) { pressButton(i); return; }
@@ -323,6 +367,7 @@ int main()
 
 	cursorBottle = loadImageToCursor("res/cursor.png", 20, 3);
 	cursorCoin = loadImageToCursor("res/cursor_coin.png", 32, 32);
+	cursorCard = loadImageToCursor("res/cursor_card.png", 48, 30);
 	glfwSetCursor(window, cursorBottle);
 
 	if (glewInit() != GLEW_OK) return endProgram("Failed to initialize GLEW.");
@@ -363,7 +408,9 @@ int main()
 	Texture texNozzle("res/nozzle.png", GL_TEXTURE_2D, GL_TEXTURE0);
 	Texture texScreen("res/screen.png", GL_TEXTURE_2D, GL_TEXTURE0);
 	Texture texCoinSlot("res/coin_slot.png", GL_TEXTURE_2D, GL_TEXTURE0);
+	Texture texCardReader("res/card_reader.png", GL_TEXTURE_2D, GL_TEXTURE0);
 	Texture texCoin("res/coin.png", GL_TEXTURE_2D, GL_TEXTURE0);
+	Texture texCard("res/card.png", GL_TEXTURE_2D, GL_TEXTURE0);
 	Texture texDigits("res/digits.png", GL_TEXTURE_2D, GL_TEXTURE0);
 	Texture texLabelPrice("res/label_price.png", GL_TEXTURE_2D, GL_TEXTURE0);
 	Texture texLabelPaid("res/label_paid.png", GL_TEXTURE_2D, GL_TEXTURE0);
@@ -404,6 +451,7 @@ int main()
 		// The cursor shows what the user is holding
 		if (hand != cursorHand) {
 			if (hand == HAND_COIN) glfwSetCursor(window, cursorCoin);
+			else if (hand == HAND_CARD) glfwSetCursor(window, cursorCard);
 			else glfwSetCursor(window, cursorBottle);
 			cursorHand = hand;
 		}
@@ -465,9 +513,23 @@ int main()
 
 		// Payment devices
 		Rect slot = coinSlotRect();
+		Rect reader = cardReaderRect();
 		if (hand == HAND_COIN && slot.contains(mouseX, mouseY))
 			drawColor(Rect{ slot.cx, slot.cy, slot.w * 1.5f, slot.h * 1.3f }, 0.4f, 1.0f, 0.5f, 0.5f, 2);
+		if (hand == HAND_CARD && reader.contains(mouseX, mouseY))
+			drawColor(Rect{ reader.cx, reader.cy, reader.w * 1.4f, reader.h * 1.5f }, 0.4f, 1.0f, 0.5f, 0.5f, 2);
 		drawTexture(texCoinSlot, slot);
+		drawTexture(texCardReader, reader);
+
+		Rect led = ledRect();
+		if (state == STATE_CARD_PROCESSING && cardT > CARD_MOVE_TIME) {
+			if (fmodf(cardT * 6.0f, 1.0f) < 0.5f)
+				drawColor(led, 1.0f, 0.85f, 0.1f, 1.0f, 1);
+		}
+		else if (ledGreenTimer > 0.0f || state == STATE_READY) {
+			drawColor(led, 0.2f, 1.0f, 0.3f, 1.0f, 1);
+			drawColor(Rect{ led.cx, led.cy, led.w * 3.0f, led.h * 3.0f }, 0.2f, 1.0f, 0.3f, 0.5f, 2);
+		}
 
 		// Coin going into the slot
 		if (coinAnimActive) {
@@ -484,10 +546,24 @@ int main()
 			drawTexture(texCoin, r, alpha);
 		}
 
+		// Card held at the reader
+		if (state == STATE_CARD_PROCESSING) {
+			float move = smoothstep(0.0f, CARD_MOVE_TIME, cardT);
+			float targetX = reader.cx;
+			float targetY = reader.cy + 4.0f * s * sinf(cardT * 8.0f);
+			float startW = screenH * 0.14f;
+			float endW = 170.0f * s;
+			float w = lerpf(startW, endW, move);
+			Rect r{ lerpf(cardStartX, targetX, move), lerpf(cardStartY, targetY, move), w, w * 160.0f / 256.0f };
+			drawTexture(texCard, r, 0.92f);
+		}
+
 		// Wallet
 		Rect mat = walletMatRect();
 		drawColor(mat, 0.1f, 0.08f, 0.06f, 0.35f);
 		drawTexture(texCoin, walletCoinRect());
+		bool cardAway = hand == HAND_CARD || state == STATE_CARD_PROCESSING;
+		drawTexture(texCard, walletCardRect(), cardAway ? 0.25f : 1.0f);
 
 		// Semi-transparent name label in the top right corner
 		{
@@ -511,7 +587,9 @@ int main()
 	texNozzle.Delete();
 	texScreen.Delete();
 	texCoinSlot.Delete();
+	texCardReader.Delete();
 	texCoin.Delete();
+	texCard.Delete();
 	texDigits.Delete();
 	texLabelPrice.Delete();
 	texLabelPaid.Delete();
@@ -529,6 +607,7 @@ int main()
 
 	glfwDestroyCursor(cursorBottle);
 	glfwDestroyCursor(cursorCoin);
+	glfwDestroyCursor(cursorCard);
 
 	glfwDestroyWindow(window);
 	glfwTerminate();
