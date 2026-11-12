@@ -21,6 +21,7 @@ const double TARGET_FPS = 75.0;
 const double TARGET_FRAME_TIME = 1.0 / TARGET_FPS;
 
 const int PERFUME_COUNT = 5;
+const int COIN_VALUE = 50;
 const int PRICES[PERFUME_COUNT] = { 100, 150, 100, 150, 200 };
 const float PERFUME_COLORS[PERFUME_COUNT][3] = {
 	{ 235 / 255.0f, 200 / 255.0f,  50 / 255.0f },
@@ -34,6 +35,7 @@ const float PERFUME_COLORS[PERFUME_COUNT][3] = {
 const float MACHINE_W = 900.0f;
 const float MACHINE_H = 1000.0f;
 
+const float COIN_ANIM_TIME = 0.45f;
 const float BUTTON_PRESS_TIME = 0.18f;
 
 // ---------------------------------------------------------------------------
@@ -46,6 +48,15 @@ struct Rect {
 	}
 };
 
+enum MachineState {
+	STATE_IDLE,            // nothing selected
+	STATE_SELECTED,        // perfume selected, nothing paid yet
+	STATE_PAYING,          // part of the price paid with coins
+	STATE_READY            // paid, waiting for the button
+};
+
+enum Hand { HAND_EMPTY, HAND_COIN };
+
 // ---------------------------------------------------------------------------
 // Global state
 // ---------------------------------------------------------------------------
@@ -55,15 +66,23 @@ float machineScale = 1.0f;
 float machineLeft = 0.0f;
 float machineTop = 0.0f;
 
+MachineState state = STATE_IDLE;
+Hand hand = HAND_EMPTY;
 int selected = -1;
 int paid = 0;
 
 float buttonPressTimer[PERFUME_COUNT] = { 0 };
 
+bool coinAnimActive = false;
+float coinAnimT = 0.0f;
+float coinStartX = 0.0f, coinStartY = 0.0f;
+
 float mouseX = 0.0f, mouseY = 0.0f;
 float timeNow = 0.0f;
 
 GLFWcursor* cursorBottle = nullptr;
+GLFWcursor* cursorCoin = nullptr;
+Hand cursorHand = HAND_EMPTY;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -72,6 +91,19 @@ int endProgram(std::string message) {
 	std::cout << message << std::endl;
 	glfwTerminate();
 	return -1;
+}
+
+float clamp01(float v) {
+	return (std::max)(0.0f, (std::min)(1.0f, v));
+}
+
+float smoothstep(float e0, float e1, float x) {
+	float t = clamp01((x - e0) / (e1 - e0));
+	return t * t * (3.0f - 2.0f * t);
+}
+
+float lerpf(float a, float b, float t) {
+	return a + (b - a) * t;
 }
 
 void updateLayout() {
@@ -96,21 +128,55 @@ Rect bottleRect(int i) { float c = slotCenterX(i); return machineRect(c - 47.5f,
 Rect bottleGlow(int i) { float c = slotCenterX(i); return machineRect(c - 85.0f, 150.0f, c + 85.0f, 385.0f); }
 Rect nozzleRect(int i) { float c = slotCenterX(i); return machineRect(c - 25.0f, 413.0f, c + 25.0f, 473.0f); }
 Rect buttonRect(int i) { float c = slotCenterX(i); return machineRect(c - 38.0f, 492.0f, c + 38.0f, 568.0f); }
+Rect buttonGlow(int i) { float c = slotCenterX(i); return machineRect(c - 60.0f, 470.0f, c + 60.0f, 590.0f); }
 
 Rect showcaseRect() { return machineRect(50.0f, 130.0f, 850.0f, 400.0f); }
 Rect screenRect() { return machineRect(70.0f, 616.0f, 450.0f, 856.0f); }
+Rect coinSlotRect() { return machineRect(500.0f, 650.0f, 620.0f, 830.0f); }
+
+Rect walletMatRect() {
+	float right = toScreenX(MACHINE_W);
+	float space = screenW - right;
+	float w = (std::min)(space * 0.8f, screenH * 0.24f);
+	return Rect{ right + space / 2.0f, screenH * 0.36f, w, screenH * 0.42f };
+}
+
+Rect walletCoinRect() {
+	Rect mat = walletMatRect();
+	float size = (std::min)(screenH * 0.09f, mat.w * 0.5f);
+	return Rect{ mat.cx, mat.cy + mat.h * 0.22f, size, size };
+}
 
 // ---------------------------------------------------------------------------
 // Game logic
 // ---------------------------------------------------------------------------
+bool isBusy() {
+	return coinAnimActive;
+}
+
 void selectPerfume(int i) {
-	selected = i;
+	if (state == STATE_IDLE || state == STATE_SELECTED) {
+		selected = i;
+		state = STATE_SELECTED;
+	}
 }
 
 void pressButton(int i) {
 	buttonPressTimer[i] = BUTTON_PRESS_TIME;
+	if (isBusy()) return;
 	selectPerfume(i);
 }
+
+void insertCoin() {
+	if (selected < 0 || paid >= PRICES[selected] || isBusy()) {
+		return;
+	}
+	coinAnimActive = true;
+	coinAnimT = 0.0f;
+	coinStartX = mouseX;
+	coinStartY = mouseY;
+}
+
 void updateMouse(GLFWwindow* window) {
 	double xpos, ypos;
 	glfwGetCursorPos(window, &xpos, &ypos);
@@ -124,6 +190,20 @@ void updateMouse(GLFWwindow* window) {
 void update(float dt) {
 	for (int i = 0; i < PERFUME_COUNT; i++)
 		buttonPressTimer[i] = (std::max)(0.0f, buttonPressTimer[i] - dt);
+
+	if (coinAnimActive) {
+		coinAnimT += dt;
+		if (coinAnimT >= COIN_ANIM_TIME) {
+			coinAnimActive = false;
+			paid += COIN_VALUE;
+			if (paid >= PRICES[selected]) {
+				state = STATE_READY;
+			}
+			else {
+				state = STATE_PAYING;
+			}
+		}
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -140,12 +220,25 @@ void keyboardCallback(GLFWwindow* window, int key, int scancode, int action, int
 void mouseCallback(GLFWwindow* window, int button, int action, int mods) {
 	if (action != GLFW_PRESS) return;
 	updateMouse(window);
+
+	if (button == GLFW_MOUSE_BUTTON_RIGHT) {
+		hand = HAND_EMPTY;
+		return;
+	}
 	if (button != GLFW_MOUSE_BUTTON_LEFT) return;
+
+	if (hand == HAND_COIN) {
+		if (coinSlotRect().contains(mouseX, mouseY)) { insertCoin(); return; }
+		if (walletCoinRect().contains(mouseX, mouseY)) return;
+		hand = HAND_EMPTY;
+	}
+
+	if (walletCoinRect().contains(mouseX, mouseY)) { hand = HAND_COIN; return; }
 
 	for (int i = 0; i < PERFUME_COUNT; i++) {
 		if (buttonRect(i).contains(mouseX, mouseY)) { pressButton(i); return; }
 		if (bottleRect(i).contains(mouseX, mouseY)) {
-			selectPerfume(i);
+			if (!isBusy()) selectPerfume(i);
 			return;
 		}
 	}
@@ -229,6 +322,7 @@ int main()
 	glfwSetMouseButtonCallback(window, mouseCallback);
 
 	cursorBottle = loadImageToCursor("res/cursor.png", 20, 3);
+	cursorCoin = loadImageToCursor("res/cursor_coin.png", 32, 32);
 	glfwSetCursor(window, cursorBottle);
 
 	if (glewInit() != GLEW_OK) return endProgram("Failed to initialize GLEW.");
@@ -268,6 +362,8 @@ int main()
 	Texture texShowcase("res/showcase.png", GL_TEXTURE_2D, GL_TEXTURE0);
 	Texture texNozzle("res/nozzle.png", GL_TEXTURE_2D, GL_TEXTURE0);
 	Texture texScreen("res/screen.png", GL_TEXTURE_2D, GL_TEXTURE0);
+	Texture texCoinSlot("res/coin_slot.png", GL_TEXTURE_2D, GL_TEXTURE0);
+	Texture texCoin("res/coin.png", GL_TEXTURE_2D, GL_TEXTURE0);
 	Texture texDigits("res/digits.png", GL_TEXTURE_2D, GL_TEXTURE0);
 	Texture texLabelPrice("res/label_price.png", GL_TEXTURE_2D, GL_TEXTURE0);
 	Texture texLabelPaid("res/label_paid.png", GL_TEXTURE_2D, GL_TEXTURE0);
@@ -305,6 +401,13 @@ int main()
 		updateMouse(window);
 		update(dt);
 
+		// The cursor shows what the user is holding
+		if (hand != cursorHand) {
+			if (hand == HAND_COIN) glfwSetCursor(window, cursorCoin);
+			else glfwSetCursor(window, cursorBottle);
+			cursorHand = hand;
+		}
+
 		glClear(GL_COLOR_BUFFER_BIT);
 		shaderProgram.Activate();
 		VAO1.Bind();
@@ -332,6 +435,12 @@ int main()
 		// Nozzles and buttons
 		for (int i = 0; i < PERFUME_COUNT; i++) {
 			drawTexture(texNozzle, nozzleRect(i));
+
+			if (state == STATE_READY && i == selected) {
+				const float* c = PERFUME_COLORS[i];
+				float pulse = 0.5f + 0.4f * sinf(timeNow * 6.0f);
+				drawColor(buttonGlow(i), c[0], c[1], c[2], pulse, 2);
+			}
 			Texture& btn = buttonPressTimer[i] > 0.0f ? texButtonsPressed[i] : texButtons[i];
 			drawTexture(btn, buttonRect(i));
 		}
@@ -354,6 +463,32 @@ int main()
 			drawLabel(texLabelRsd, x + 6.0f, rowPaid, labelH);
 		}
 
+		// Payment devices
+		Rect slot = coinSlotRect();
+		if (hand == HAND_COIN && slot.contains(mouseX, mouseY))
+			drawColor(Rect{ slot.cx, slot.cy, slot.w * 1.5f, slot.h * 1.3f }, 0.4f, 1.0f, 0.5f, 0.5f, 2);
+		drawTexture(texCoinSlot, slot);
+
+		// Coin going into the slot
+		if (coinAnimActive) {
+			float t = coinAnimT / COIN_ANIM_TIME;
+			float move = smoothstep(0.0f, 0.6f, t);
+			float targetX = toScreenX(560.0f);
+			float targetY = toScreenY(700.0f + 60.0f * smoothstep(0.55f, 1.0f, t));
+			float startSize = screenH * 0.07f;
+			float endSize = 70.0f * s;
+			float size = lerpf(startSize, endSize, move);
+			float squeeze = 1.0f - 0.85f * smoothstep(0.45f, 0.7f, t);
+			float alpha = 1.0f - smoothstep(0.8f, 1.0f, t);
+			Rect r{ lerpf(coinStartX, targetX, move), lerpf(coinStartY, targetY, move), size * squeeze, size };
+			drawTexture(texCoin, r, alpha);
+		}
+
+		// Wallet
+		Rect mat = walletMatRect();
+		drawColor(mat, 0.1f, 0.08f, 0.06f, 0.35f);
+		drawTexture(texCoin, walletCoinRect());
+
 		// Semi-transparent name label in the top right corner
 		{
 			float margin = screenH * 0.02f;
@@ -375,6 +510,8 @@ int main()
 	texShowcase.Delete();
 	texNozzle.Delete();
 	texScreen.Delete();
+	texCoinSlot.Delete();
+	texCoin.Delete();
 	texDigits.Delete();
 	texLabelPrice.Delete();
 	texLabelPaid.Delete();
@@ -391,6 +528,7 @@ int main()
 	shaderProgram.Delete();
 
 	glfwDestroyCursor(cursorBottle);
+	glfwDestroyCursor(cursorCoin);
 
 	glfwDestroyWindow(window);
 	glfwTerminate();
