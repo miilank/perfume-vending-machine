@@ -1,10 +1,10 @@
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
 
-#include <iostream>
-#include <cmath>
-#include <string>
 #include <algorithm>
+#include <cmath>
+#include <iostream>
+#include <string>
 #include <vector>
 
 #include "shaderClass.h"
@@ -14,11 +14,14 @@
 #include "Texture.h"
 #include "Util.h"
 
-// SETTINGS
+// ---------------------------------------------------------------------------
+// Settings
+// ---------------------------------------------------------------------------
 const double TARGET_FPS = 75.0;
 const double TARGET_FRAME_TIME = 1.0 / TARGET_FPS;
 
 const int PERFUME_COUNT = 5;
+const int PRICES[PERFUME_COUNT] = { 100, 150, 100, 150, 200 };
 const float PERFUME_COLORS[PERFUME_COUNT][3] = {
 	{ 235 / 255.0f, 200 / 255.0f,  50 / 255.0f },
 	{ 225 / 255.0f, 110 / 255.0f, 150 / 255.0f },
@@ -33,7 +36,9 @@ const float MACHINE_H = 1000.0f;
 
 const float BUTTON_PRESS_TIME = 0.18f;
 
-// TYPES
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
 struct Rect {
 	float cx, cy, w, h;
 	bool contains(float x, float y) const {
@@ -41,7 +46,9 @@ struct Rect {
 	}
 };
 
-// GLOBAL STATE
+// ---------------------------------------------------------------------------
+// Global state
+// ---------------------------------------------------------------------------
 int screenW = 1920, screenH = 1080;
 
 float machineScale = 1.0f;
@@ -49,6 +56,7 @@ float machineLeft = 0.0f;
 float machineTop = 0.0f;
 
 int selected = -1;
+int paid = 0;
 
 float buttonPressTimer[PERFUME_COUNT] = { 0 };
 
@@ -57,7 +65,9 @@ float timeNow = 0.0f;
 
 GLFWcursor* cursorBottle = nullptr;
 
-// HELPERS
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 int endProgram(std::string message) {
 	std::cout << message << std::endl;
 	glfwTerminate();
@@ -90,7 +100,9 @@ Rect buttonRect(int i) { float c = slotCenterX(i); return machineRect(c - 38.0f,
 Rect showcaseRect() { return machineRect(50.0f, 130.0f, 850.0f, 400.0f); }
 Rect screenRect() { return machineRect(70.0f, 616.0f, 450.0f, 856.0f); }
 
-// GAME LOGIC
+// ---------------------------------------------------------------------------
+// Game logic
+// ---------------------------------------------------------------------------
 void selectPerfume(int i) {
 	selected = i;
 }
@@ -114,7 +126,9 @@ void update(float dt) {
 		buttonPressTimer[i] = (std::max)(0.0f, buttonPressTimer[i] - dt);
 }
 
-// CALLBACKS
+// ---------------------------------------------------------------------------
+// Callbacks
+// ---------------------------------------------------------------------------
 void keyboardCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
 	if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
 		glfwSetWindowShouldClose(window, GLFW_TRUE);
@@ -137,7 +151,9 @@ void mouseCallback(GLFWwindow* window, int button, int action, int mods) {
 	}
 }
 
-// DRAWING
+// ---------------------------------------------------------------------------
+// Drawing
+// ---------------------------------------------------------------------------
 Shader* gShader = nullptr;
 
 void setCommonUniforms(const Rect& r, float alpha, int shape) {
@@ -166,7 +182,32 @@ void drawColor(const Rect& r, float red, float green, float blue, float alpha, i
 	glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 }
 
-// MAIN
+// Draws an image with a given height (in machine units), keeping its aspect ratio; returns the right edge
+float drawLabel(Texture& tex, float mx, float myCenter, float mh) {
+	float mw = mh * tex.width / (float)tex.height;
+	drawTexture(tex, machineRect(mx, myCenter - mh / 2, mx + mw, myCenter + mh / 2));
+	return mx + mw;
+}
+
+// Draws a number using the digit atlas "0123456789./" (12 cells); returns the right edge
+float drawNumber(Texture& digits, int value, float mx, float myCenter, float mh,
+	float tr, float tg, float tb) {
+	std::string s = std::to_string(value);
+	float cellW = mh * 64.0f / 96.0f;
+	float advance = cellW * 0.7f;
+	float x = mx;
+	for (char c : s) {
+		int idx = c - '0';
+		drawTexture(digits, machineRect(x, myCenter - mh / 2, x + cellW, myCenter + mh / 2),
+			1.0f, tr, tg, tb, idx / 12.0f, 0.0f, 1.0f / 12.0f, 1.0f);
+		x += advance;
+	}
+	return x + (cellW - advance);
+}
+
+// ---------------------------------------------------------------------------
+// Main
+// ---------------------------------------------------------------------------
 int main()
 {
 	if (!glfwInit()) {
@@ -196,6 +237,7 @@ int main()
 	glViewport(0, 0, screenW, screenH);
 	updateLayout();
 
+	// Shader
 	Shader shaderProgram("default.vert", "default.frag");
 	gShader = &shaderProgram;
 
@@ -220,11 +262,16 @@ int main()
 	VBO1.Unbind();
 	EBO1.Unbind();
 
+	// Textures
 	Texture texBackground("res/background.png", GL_TEXTURE_2D, GL_TEXTURE0);
 	Texture texBody("res/machine_body.png", GL_TEXTURE_2D, GL_TEXTURE0);
 	Texture texShowcase("res/showcase.png", GL_TEXTURE_2D, GL_TEXTURE0);
 	Texture texNozzle("res/nozzle.png", GL_TEXTURE_2D, GL_TEXTURE0);
 	Texture texScreen("res/screen.png", GL_TEXTURE_2D, GL_TEXTURE0);
+	Texture texDigits("res/digits.png", GL_TEXTURE_2D, GL_TEXTURE0);
+	Texture texLabelPrice("res/label_price.png", GL_TEXTURE_2D, GL_TEXTURE0);
+	Texture texLabelPaid("res/label_paid.png", GL_TEXTURE_2D, GL_TEXTURE0);
+	Texture texLabelRsd("res/label_rsd.png", GL_TEXTURE_2D, GL_TEXTURE0);
 	Texture texName("res/name_label.png", GL_TEXTURE_2D, GL_TEXTURE0);
 
 	std::vector<Texture> texBottles, texButtons, texButtonsPressed, texInfo;
@@ -264,7 +311,7 @@ int main()
 
 		float s = machineScale;
 
-		// background and machine
+		// Background and machine
 		drawTexture(texBackground, Rect{ screenW / 2.0f, screenH / 2.0f, (float)screenW, (float)screenH });
 		Rect body = machineRect(0.0f, 0.0f, MACHINE_W, MACHINE_H);
 		drawColor(Rect{ body.cx + 16.0f * s, body.cy - 30.0f * s, body.w - 40.0f * s, body.h - 40.0f * s }, 0.0f, 0.0f, 0.0f, 0.3f);
@@ -294,6 +341,19 @@ int main()
 		drawTexture(texScreen, scr);
 		drawTexture(texInfo[selected >= 0 ? selected + 1 : 0], scr);
 
+		// Price and paid amount
+		float rowPrice = 893.0f, rowPaid = 937.0f, labelH = 34.0f, digitH = 40.0f;
+		drawLabel(texLabelPrice, 74.0f, rowPrice, labelH);
+		if (selected >= 0) {
+			float x = drawNumber(texDigits, PRICES[selected], 230.0f, rowPrice, digitH, 1.0f, 0.85f, 0.4f);
+			drawLabel(texLabelRsd, x + 6.0f, rowPrice, labelH);
+		}
+		drawLabel(texLabelPaid, 74.0f, rowPaid, labelH);
+		{
+			float x = drawNumber(texDigits, paid, 230.0f, rowPaid, digitH, 0.55f, 1.0f, 0.6f);
+			drawLabel(texLabelRsd, x + 6.0f, rowPaid, labelH);
+		}
+
 		// Semi-transparent name label in the top right corner
 		{
 			float margin = screenH * 0.02f;
@@ -303,7 +363,6 @@ int main()
 			if (w > maxW && maxW > 0.0f) { w = maxW; h = w * texName.height / (float)texName.width; }
 			drawTexture(texName, Rect{ screenW - margin - w / 2.0f, screenH - margin - h / 2.0f, w, h }, 0.75f);
 		}
-
 		glfwSwapBuffers(window);
 		glfwPollEvents();
 
@@ -316,6 +375,10 @@ int main()
 	texShowcase.Delete();
 	texNozzle.Delete();
 	texScreen.Delete();
+	texDigits.Delete();
+	texLabelPrice.Delete();
+	texLabelPaid.Delete();
+	texLabelRsd.Delete();
 	texName.Delete();
 	for (Texture& t : texBottles) t.Delete();
 	for (Texture& t : texButtons) t.Delete();
