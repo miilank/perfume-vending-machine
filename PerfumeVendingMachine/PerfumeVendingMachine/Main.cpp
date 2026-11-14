@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <iostream>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -38,6 +39,7 @@ const float MACHINE_H = 1000.0f;
 const float COIN_ANIM_TIME = 0.45f;
 const float CARD_MOVE_TIME = 0.3f;
 const float CARD_PROCESS_TIME = 1.6f;
+const float SPRAY_EMIT_TIME = 1.0f;
 const float BUTTON_PRESS_TIME = 0.18f;
 
 // ---------------------------------------------------------------------------
@@ -55,10 +57,17 @@ enum MachineState {
 	STATE_SELECTED,        // perfume selected, nothing paid yet
 	STATE_PAYING,          // part of the price paid with coins
 	STATE_CARD_PROCESSING, // card is at the reader
-	STATE_READY            // paid, waiting for the button
+	STATE_READY,           // paid, waiting for the button
+	STATE_SPRAYING         // spray animation
 };
 
 enum Hand { HAND_EMPTY, HAND_COIN, HAND_CARD };
+
+struct Particle {
+	float x, y, vx, vy;
+	float age, life;
+	float startSize, endSize;
+};
 
 // ---------------------------------------------------------------------------
 // Global state
@@ -84,6 +93,11 @@ float coinStartX = 0.0f, coinStartY = 0.0f;
 float cardT = 0.0f;
 float cardStartX = 0.0f, cardStartY = 0.0f;
 
+float sprayT = 0.0f;
+float sprayEmitAccumulator = 0.0f;
+std::vector<Particle> particles;
+std::mt19937 rng(12345);
+
 float mouseX = 0.0f, mouseY = 0.0f;
 float timeNow = 0.0f;
 
@@ -99,6 +113,11 @@ int endProgram(std::string message) {
 	std::cout << message << std::endl;
 	glfwTerminate();
 	return -1;
+}
+
+float randRange(float a, float b) {
+	std::uniform_real_distribution<float> dist(a, b);
+	return dist(rng);
 }
 
 float clamp01(float v) {
@@ -167,7 +186,14 @@ Rect walletCardRect() {
 // Game logic
 // ---------------------------------------------------------------------------
 bool isBusy() {
-	return coinAnimActive || state == STATE_CARD_PROCESSING;
+	return coinAnimActive || state == STATE_CARD_PROCESSING || state == STATE_SPRAYING;
+}
+
+void resetMachine() {
+	state = STATE_IDLE;
+	selected = -1;
+	paid = 0;
+	particles.clear();
 }
 
 void selectPerfume(int i) {
@@ -177,10 +203,23 @@ void selectPerfume(int i) {
 	}
 }
 
+void startSpray() {
+	state = STATE_SPRAYING;
+	sprayT = 0.0f;
+	sprayEmitAccumulator = 0.0f;
+	particles.clear();
+}
+
 void pressButton(int i) {
 	buttonPressTimer[i] = BUTTON_PRESS_TIME;
 	if (isBusy()) return;
-	selectPerfume(i);
+
+	if (state == STATE_READY) {
+		if (i == selected) startSpray();
+	}
+	else {
+		selectPerfume(i);
+	}
 }
 
 void insertCoin() {
@@ -241,6 +280,45 @@ void update(float dt) {
 			state = STATE_READY;
 			ledGreenTimer = 1.0f;
 		}
+	}
+
+	if (state == STATE_SPRAYING) {
+		sprayT += dt;
+		Rect nozzle = nozzleRect(selected);
+		float tipX = nozzle.cx;
+		float tipY = toScreenY(469.0f);
+		float s = machineScale;
+
+		if (sprayT < SPRAY_EMIT_TIME) {
+			sprayEmitAccumulator += dt * 90.0f;
+			while (sprayEmitAccumulator >= 1.0f) {
+				sprayEmitAccumulator -= 1.0f;
+				Particle p;
+				p.x = tipX + randRange(-4.0f, 4.0f) * s;
+				p.y = tipY;
+				p.vx = randRange(-70.0f, 70.0f) * s;
+				p.vy = -randRange(90.0f, 260.0f) * s;
+				p.age = 0.0f;
+				p.life = randRange(1.0f, 1.7f);
+				p.startSize = randRange(14.0f, 26.0f) * s;
+				p.endSize = randRange(140.0f, 220.0f) * s;
+				particles.push_back(p);
+			}
+		}
+
+		for (Particle& p : particles) {
+			p.age += dt;
+			p.x += p.vx * dt;
+			p.y += p.vy * dt;
+			p.vx *= (1.0f - 1.5f * dt);
+			p.vy *= (1.0f - 1.5f * dt);
+			p.y += 12.0f * s * dt;
+		}
+		particles.erase(std::remove_if(particles.begin(), particles.end(),
+			[](const Particle& p) { return p.age >= p.life; }), particles.end());
+
+		if (sprayT >= SPRAY_EMIT_TIME && particles.empty())
+			resetMachine();
 	}
 }
 
@@ -411,6 +489,7 @@ int main()
 	Texture texCardReader("res/card_reader.png", GL_TEXTURE_2D, GL_TEXTURE0);
 	Texture texCoin("res/coin.png", GL_TEXTURE_2D, GL_TEXTURE0);
 	Texture texCard("res/card.png", GL_TEXTURE_2D, GL_TEXTURE0);
+	Texture texSpray("res/spray_cloud.png", GL_TEXTURE_2D, GL_TEXTURE0);
 	Texture texDigits("res/digits.png", GL_TEXTURE_2D, GL_TEXTURE0);
 	Texture texLabelPrice("res/label_price.png", GL_TEXTURE_2D, GL_TEXTURE0);
 	Texture texLabelPaid("res/label_paid.png", GL_TEXTURE_2D, GL_TEXTURE0);
@@ -558,6 +637,23 @@ int main()
 			drawTexture(texCard, r, 0.92f);
 		}
 
+		// Spray
+		if (state == STATE_SPRAYING) {
+			const float* c = PERFUME_COLORS[selected];
+			float tr = lerpf(1.0f, c[0], 0.45f), tg = lerpf(1.0f, c[1], 0.45f), tb = lerpf(1.0f, c[2], 0.45f);
+			for (const Particle& p : particles) {
+				float k = p.age / p.life;
+				float size = lerpf(p.startSize, p.endSize, sqrtf(k));
+				float alpha = 0.7f * (1.0f - k) * smoothstep(0.0f, 0.08f, p.age);
+				drawTexture(texSpray, Rect{ p.x, p.y, size, size }, alpha, tr, tg, tb);
+			}
+			if (sprayT < SPRAY_EMIT_TIME) {
+				Rect nozzle = nozzleRect(selected);
+				float flash = 0.7f * (1.0f - sprayT / SPRAY_EMIT_TIME);
+				drawColor(Rect{ nozzle.cx, toScreenY(469.0f), 50.0f * s, 50.0f * s }, 1.0f, 1.0f, 1.0f, flash, 2);
+			}
+		}
+
 		// Wallet
 		Rect mat = walletMatRect();
 		drawColor(mat, 0.1f, 0.08f, 0.06f, 0.35f);
@@ -590,6 +686,7 @@ int main()
 	texCardReader.Delete();
 	texCoin.Delete();
 	texCard.Delete();
+	texSpray.Delete();
 	texDigits.Delete();
 	texLabelPrice.Delete();
 	texLabelPaid.Delete();
