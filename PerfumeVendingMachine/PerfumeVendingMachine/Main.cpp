@@ -2,9 +2,7 @@
 #include <GLFW/glfw3.h>
 
 #include <algorithm>
-#include <cmath>
 #include <iostream>
-#include <random>
 #include <string>
 #include <vector>
 
@@ -38,9 +36,10 @@ const float MACHINE_H = 1000.0f;
 
 const float COIN_ANIM_TIME = 0.45f;
 const float CARD_MOVE_TIME = 0.3f;
-const float CARD_PROCESS_TIME = 1.6f;
-const float SPRAY_EMIT_TIME = 1.0f;
+const float CARD_PROCESS_TIME = 1.0f;
+const float SPRAY_TIME = 1.5f;
 const float BUTTON_PRESS_TIME = 0.18f;
+const float ERROR_TIME = 0.6f;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -63,12 +62,6 @@ enum MachineState {
 
 enum Hand { HAND_EMPTY, HAND_COIN, HAND_CARD };
 
-struct Particle {
-	float x, y, vx, vy;
-	float age, life;
-	float startSize, endSize;
-};
-
 // ---------------------------------------------------------------------------
 // Global state
 // ---------------------------------------------------------------------------
@@ -84,7 +77,7 @@ int selected = -1;
 int paid = 0;
 
 float buttonPressTimer[PERFUME_COUNT] = { 0 };
-float ledGreenTimer = 0.0f;
+float errorTimer = 0.0f;
 
 bool coinAnimActive = false;
 float coinAnimT = 0.0f;
@@ -94,12 +87,8 @@ float cardT = 0.0f;
 float cardStartX = 0.0f, cardStartY = 0.0f;
 
 float sprayT = 0.0f;
-float sprayEmitAccumulator = 0.0f;
-std::vector<Particle> particles;
-std::mt19937 rng(12345);
 
 float mouseX = 0.0f, mouseY = 0.0f;
-float timeNow = 0.0f;
 
 GLFWcursor* cursorBottle = nullptr;
 GLFWcursor* cursorCoin = nullptr;
@@ -113,20 +102,6 @@ int endProgram(std::string message) {
 	std::cout << message << std::endl;
 	glfwTerminate();
 	return -1;
-}
-
-float randRange(float a, float b) {
-	std::uniform_real_distribution<float> dist(a, b);
-	return dist(rng);
-}
-
-float clamp01(float v) {
-	return (std::max)(0.0f, (std::min)(1.0f, v));
-}
-
-float smoothstep(float e0, float e1, float x) {
-	float t = clamp01((x - e0) / (e1 - e0));
-	return t * t * (3.0f - 2.0f * t);
 }
 
 float lerpf(float a, float b, float t) {
@@ -152,16 +127,13 @@ Rect machineRect(float x0, float y0, float x1, float y1) {
 float slotCenterX(int i) { return 130.0f + 160.0f * i; }
 
 Rect bottleRect(int i) { float c = slotCenterX(i); return machineRect(c - 47.5f, 172.0f, c + 47.5f, 362.0f); }
-Rect bottleGlow(int i) { float c = slotCenterX(i); return machineRect(c - 85.0f, 150.0f, c + 85.0f, 385.0f); }
 Rect nozzleRect(int i) { float c = slotCenterX(i); return machineRect(c - 25.0f, 413.0f, c + 25.0f, 473.0f); }
 Rect buttonRect(int i) { float c = slotCenterX(i); return machineRect(c - 38.0f, 492.0f, c + 38.0f, 568.0f); }
-Rect buttonGlow(int i) { float c = slotCenterX(i); return machineRect(c - 60.0f, 470.0f, c + 60.0f, 590.0f); }
 
 Rect showcaseRect() { return machineRect(50.0f, 130.0f, 850.0f, 400.0f); }
 Rect screenRect() { return machineRect(70.0f, 616.0f, 450.0f, 856.0f); }
 Rect coinSlotRect() { return machineRect(500.0f, 650.0f, 620.0f, 830.0f); }
 Rect cardReaderRect() { return machineRect(640.0f, 650.0f, 840.0f, 790.0f); }
-Rect ledRect() { return machineRect(726.0f, 670.0f, 754.0f, 698.0f); }
 
 Rect walletMatRect() {
 	float right = toScreenX(MACHINE_W);
@@ -189,11 +161,14 @@ bool isBusy() {
 	return coinAnimActive || state == STATE_CARD_PROCESSING || state == STATE_SPRAYING;
 }
 
+void showError() {
+	errorTimer = ERROR_TIME;
+}
+
 void resetMachine() {
 	state = STATE_IDLE;
 	selected = -1;
 	paid = 0;
-	particles.clear();
 }
 
 void selectPerfume(int i) {
@@ -201,13 +176,14 @@ void selectPerfume(int i) {
 		selected = i;
 		state = STATE_SELECTED;
 	}
+	else if (i != selected) {
+		showError();
+	}
 }
 
 void startSpray() {
 	state = STATE_SPRAYING;
 	sprayT = 0.0f;
-	sprayEmitAccumulator = 0.0f;
-	particles.clear();
 }
 
 void pressButton(int i) {
@@ -216,6 +192,10 @@ void pressButton(int i) {
 
 	if (state == STATE_READY) {
 		if (i == selected) startSpray();
+		else showError();
+	}
+	else if (state == STATE_PAYING) {
+		showError();
 	}
 	else {
 		selectPerfume(i);
@@ -224,6 +204,7 @@ void pressButton(int i) {
 
 void insertCoin() {
 	if (selected < 0 || paid >= PRICES[selected] || isBusy()) {
+		showError();
 		return;
 	}
 	coinAnimActive = true;
@@ -234,6 +215,7 @@ void insertCoin() {
 
 void useCard() {
 	if (selected < 0 || paid >= PRICES[selected] || isBusy()) {
+		showError();
 		return;
 	}
 	state = STATE_CARD_PROCESSING;
@@ -256,20 +238,17 @@ void updateMouse(GLFWwindow* window) {
 void update(float dt) {
 	for (int i = 0; i < PERFUME_COUNT; i++)
 		buttonPressTimer[i] = (std::max)(0.0f, buttonPressTimer[i] - dt);
-	ledGreenTimer = (std::max)(0.0f, ledGreenTimer - dt);
+	errorTimer = (std::max)(0.0f, errorTimer - dt);
 
 	if (coinAnimActive) {
 		coinAnimT += dt;
 		if (coinAnimT >= COIN_ANIM_TIME) {
 			coinAnimActive = false;
 			paid += COIN_VALUE;
-			if (paid >= PRICES[selected]) {
+			if (paid >= PRICES[selected])
 				state = STATE_READY;
-				ledGreenTimer = 1.0f;
-			}
-			else {
+			else
 				state = STATE_PAYING;
-			}
 		}
 	}
 
@@ -278,46 +257,12 @@ void update(float dt) {
 		if (cardT >= CARD_MOVE_TIME + CARD_PROCESS_TIME) {
 			paid = PRICES[selected];
 			state = STATE_READY;
-			ledGreenTimer = 1.0f;
 		}
 	}
 
 	if (state == STATE_SPRAYING) {
 		sprayT += dt;
-		Rect nozzle = nozzleRect(selected);
-		float tipX = nozzle.cx;
-		float tipY = toScreenY(469.0f);
-		float s = machineScale;
-
-		if (sprayT < SPRAY_EMIT_TIME) {
-			sprayEmitAccumulator += dt * 90.0f;
-			while (sprayEmitAccumulator >= 1.0f) {
-				sprayEmitAccumulator -= 1.0f;
-				Particle p;
-				p.x = tipX + randRange(-4.0f, 4.0f) * s;
-				p.y = tipY;
-				p.vx = randRange(-70.0f, 70.0f) * s;
-				p.vy = -randRange(90.0f, 260.0f) * s;
-				p.age = 0.0f;
-				p.life = randRange(1.0f, 1.7f);
-				p.startSize = randRange(14.0f, 26.0f) * s;
-				p.endSize = randRange(140.0f, 220.0f) * s;
-				particles.push_back(p);
-			}
-		}
-
-		for (Particle& p : particles) {
-			p.age += dt;
-			p.x += p.vx * dt;
-			p.y += p.vy * dt;
-			p.vx *= (1.0f - 1.5f * dt);
-			p.vy *= (1.0f - 1.5f * dt);
-			p.y += 12.0f * s * dt;
-		}
-		particles.erase(std::remove_if(particles.begin(), particles.end(),
-			[](const Particle& p) { return p.age >= p.life; }), particles.end());
-
-		if (sprayT >= SPRAY_EMIT_TIME && particles.empty())
+		if (sprayT >= SPRAY_TIME)
 			resetMachine();
 	}
 }
@@ -522,7 +467,6 @@ int main()
 		float dt = (float)(frameStart - lastFrame);
 		lastFrame = frameStart;
 		if (dt > 0.1f) dt = 0.1f;
-		timeNow = (float)frameStart;
 
 		updateMouse(window);
 		update(dt);
@@ -547,12 +491,7 @@ int main()
 		drawColor(Rect{ body.cx + 16.0f * s, body.cy - 30.0f * s, body.w - 40.0f * s, body.h - 40.0f * s }, 0.0f, 0.0f, 0.0f, 0.3f);
 		drawTexture(texBody, body);
 
-		// Showcase: glow, bottles, glass
-		if (selected >= 0) {
-			const float* c = PERFUME_COLORS[selected];
-			float pulse = 0.55f + 0.15f * sinf(timeNow * 3.0f);
-			drawColor(bottleGlow(selected), c[0], c[1], c[2], pulse, 2);
-		}
+		// Showcase: bottles (the not selected ones are darker), glass
 		for (int i = 0; i < PERFUME_COUNT; i++) {
 			float shade = (selected >= 0 && i != selected) ? 0.6f : 1.0f;
 			drawTexture(texBottles[i], bottleRect(i), 1.0f, shade, shade, shade);
@@ -562,20 +501,17 @@ int main()
 		// Nozzles and buttons
 		for (int i = 0; i < PERFUME_COUNT; i++) {
 			drawTexture(texNozzle, nozzleRect(i));
-
-			if (state == STATE_READY && i == selected) {
-				const float* c = PERFUME_COLORS[i];
-				float pulse = 0.5f + 0.4f * sinf(timeNow * 6.0f);
-				drawColor(buttonGlow(i), c[0], c[1], c[2], pulse, 2);
-			}
 			Texture& btn = buttonPressTimer[i] > 0.0f ? texButtonsPressed[i] : texButtons[i];
-			drawTexture(btn, buttonRect(i));
+			float shade = (selected >= 0 && i != selected) ? 0.6f : 1.0f;
+			drawTexture(btn, buttonRect(i), 1.0f, shade, shade, shade);
 		}
 
 		// Info screen
 		Rect scr = screenRect();
 		drawTexture(texScreen, scr);
 		drawTexture(texInfo[selected >= 0 ? selected + 1 : 0], scr);
+		if (errorTimer > 0.0f)
+			drawColor(scr, 0.9f, 0.1f, 0.1f, 0.35f * errorTimer / ERROR_TIME);
 
 		// Price and paid amount
 		float rowPrice = 893.0f, rowPaid = 937.0f, labelH = 34.0f, digitH = 40.0f;
@@ -593,64 +529,37 @@ int main()
 		// Payment devices
 		Rect slot = coinSlotRect();
 		Rect reader = cardReaderRect();
-		if (hand == HAND_COIN && slot.contains(mouseX, mouseY))
-			drawColor(Rect{ slot.cx, slot.cy, slot.w * 1.5f, slot.h * 1.3f }, 0.4f, 1.0f, 0.5f, 0.5f, 2);
-		if (hand == HAND_CARD && reader.contains(mouseX, mouseY))
-			drawColor(Rect{ reader.cx, reader.cy, reader.w * 1.4f, reader.h * 1.5f }, 0.4f, 1.0f, 0.5f, 0.5f, 2);
 		drawTexture(texCoinSlot, slot);
 		drawTexture(texCardReader, reader);
 
-		Rect led = ledRect();
-		if (state == STATE_CARD_PROCESSING && cardT > CARD_MOVE_TIME) {
-			if (fmodf(cardT * 6.0f, 1.0f) < 0.5f)
-				drawColor(led, 1.0f, 0.85f, 0.1f, 1.0f, 1);
-		}
-		else if (ledGreenTimer > 0.0f || state == STATE_READY) {
-			drawColor(led, 0.2f, 1.0f, 0.3f, 1.0f, 1);
-			drawColor(Rect{ led.cx, led.cy, led.w * 3.0f, led.h * 3.0f }, 0.2f, 1.0f, 0.3f, 0.5f, 2);
-		}
-
-		// Coin going into the slot
+		// Coin flying into the slot: it moves, shrinks and fades out
 		if (coinAnimActive) {
 			float t = coinAnimT / COIN_ANIM_TIME;
-			float move = smoothstep(0.0f, 0.6f, t);
-			float targetX = toScreenX(560.0f);
-			float targetY = toScreenY(700.0f + 60.0f * smoothstep(0.55f, 1.0f, t));
-			float startSize = screenH * 0.07f;
-			float endSize = 70.0f * s;
-			float size = lerpf(startSize, endSize, move);
-			float squeeze = 1.0f - 0.85f * smoothstep(0.45f, 0.7f, t);
-			float alpha = 1.0f - smoothstep(0.8f, 1.0f, t);
-			Rect r{ lerpf(coinStartX, targetX, move), lerpf(coinStartY, targetY, move), size * squeeze, size };
-			drawTexture(texCoin, r, alpha);
+			float size = lerpf(screenH * 0.07f, 60.0f * s, t);
+			Rect r{ lerpf(coinStartX, toScreenX(560.0f), t), lerpf(coinStartY, toScreenY(720.0f), t), size, size };
+			drawTexture(texCoin, r, 1.0f - t);
 		}
 
-		// Card held at the reader
+		// Card moving to the reader and staying there while the payment is processed
 		if (state == STATE_CARD_PROCESSING) {
-			float move = smoothstep(0.0f, CARD_MOVE_TIME, cardT);
-			float targetX = reader.cx;
-			float targetY = reader.cy + 4.0f * s * sinf(cardT * 8.0f);
-			float startW = screenH * 0.14f;
-			float endW = 170.0f * s;
-			float w = lerpf(startW, endW, move);
-			Rect r{ lerpf(cardStartX, targetX, move), lerpf(cardStartY, targetY, move), w, w * 160.0f / 256.0f };
-			drawTexture(texCard, r, 0.92f);
+			float t = (std::min)(1.0f, cardT / CARD_MOVE_TIME);
+			float w = lerpf(screenH * 0.14f, 170.0f * s, t);
+			Rect r{ lerpf(cardStartX, reader.cx, t), lerpf(cardStartY, reader.cy, t), w, w * 160.0f / 256.0f };
+			drawTexture(texCard, r);
 		}
 
-		// Spray
+		// Spray: three clouds leave the nozzle one after another, grow and fade out
 		if (state == STATE_SPRAYING) {
 			const float* c = PERFUME_COLORS[selected];
 			float tr = lerpf(1.0f, c[0], 0.45f), tg = lerpf(1.0f, c[1], 0.45f), tb = lerpf(1.0f, c[2], 0.45f);
-			for (const Particle& p : particles) {
-				float k = p.age / p.life;
-				float size = lerpf(p.startSize, p.endSize, sqrtf(k));
-				float alpha = 0.7f * (1.0f - k) * smoothstep(0.0f, 0.08f, p.age);
-				drawTexture(texSpray, Rect{ p.x, p.y, size, size }, alpha, tr, tg, tb);
-			}
-			if (sprayT < SPRAY_EMIT_TIME) {
-				Rect nozzle = nozzleRect(selected);
-				float flash = 0.7f * (1.0f - sprayT / SPRAY_EMIT_TIME);
-				drawColor(Rect{ nozzle.cx, toScreenY(469.0f), 50.0f * s, 50.0f * s }, 1.0f, 1.0f, 1.0f, flash, 2);
+			Rect nozzle = nozzleRect(selected);
+			for (int k = 0; k < 3; k++) {
+				float t = (sprayT - k * 0.2f) / 1.1f;
+				if (t <= 0.0f || t >= 1.0f) continue;
+				float size = lerpf(30.0f, 220.0f, t) * s;
+				float x = nozzle.cx + (k - 1) * 30.0f * s * t;
+				float y = toScreenY(469.0f) - 160.0f * s * t;
+				drawTexture(texSpray, Rect{ x, y, size, size }, 0.8f * (1.0f - t), tr, tg, tb);
 			}
 		}
 
