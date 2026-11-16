@@ -1,10 +1,10 @@
-# 2D simulacija mašine za parfeme
+### 2D simulacija mašine za parfeme
 
 2D simulacija vending mašine za parfeme, izrađena u C++ i OpenGL-u 3.3 (core profile). Projekat iz predmeta Računarska grafika.
 
 Ovaj fajl opisuje kako je projekat napravljen: strukturu, kako delovi rade zajedno i zašto su implementirani baš tako. Teorija na kojoj se projekat zasniva (OpenGL kao specifikacija, mašina stanja, objekti i slotovi, grafički pajplajn, VBO/VAO/EBO, šejderi, uniforme, blending, teksture) nalazi se u [learnopengl.md](docs/learnopengl.md).
 
-## Podešavanje i pokretanje
+#### Podešavanje i pokretanje
 
 Projekat je prazan C++ projekat (Empty Project) u Visual Studiju, platforma x64.
 

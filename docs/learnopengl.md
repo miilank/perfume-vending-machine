@@ -1,6 +1,6 @@
 # Teorija: osnove OpenGL-a
 
-Ovaj fajl sadrži teoriju na kojoj se zasniva projekat. Kako je ta teorija primenjena u samom projektu i zašto je implementacija baš takva, opisano je u [README.md](../README.md).
+Ovaj fajl sadrži teoriju na kojoj se zasniva projekat.
 
 ## OpenGL
 
@@ -523,6 +523,76 @@ Za piksel sa alfom 0.6: 60% nove boje i 40% one ispod. Pošto se meša sa onim �
 
 ### Detalji
 
+Idemo redom: prvo `sampler2D`, pa `tex0`, pa ta linija u `main`.
+
+#### `sampler2D` je tip, a `tex0` je ime
+
+```glsl
+uniform sampler2D tex0;
+```
+
+Ovo je deklaracija promjenljive, kao `int broj;` u C++-u:
+- `uniform`: vrijednost dolazi iz C++-a,
+- **`sampler2D`**: **tip** promjenljive, poseban GLSL tip za čitanje iz 2D teksture,
+- **`tex0`**: **ime** koje smo sami izabrali. Moglo je biti `slika`, `ourTexture` ili bilo šta drugo. „tex“ od texture, „0“ jer čita iz jedinice 0.
+
+#### Šta je vrijednost `sampler2D` promjenljive
+
+Nije sama slika. Vrijednost je samo **broj teksturne jedinice**: „čitaj iz jedinice 0“.
+
+Teksturna jedinica je mjesto za koje se tekstura veže prije crtanja. Kod nas se sve teksture vežu za jedinicu 0 (`GL_TEXTURE0`), u `drawTexture`:
+
+```cpp
+tex.Bind();   // glActiveTexture(GL_TEXTURE0) + glBindTexture(GL_TEXTURE_2D, ID)
+```
+
+Lanac je:
+
+```
+tex0 (vrijednost 0)  →  teksturna jedinica 0  →  slika koja je upravo vezana (npr. coin.png)
+```
+
+#### Kako se koristi u šejderu
+
+```glsl
+color = texture(tex0, texCoord) * vec4(uTint, 1.0);
+```
+
+`texture(tex0, texCoord)` znači: „iz teksture na koju pokazuje `tex0`, uzmi boju na mjestu `texCoord`“. Pošto `tex0` pokazuje na jedinicu 0, čita se slika koja je u tom trenutku vezana za jedinicu 0.
+
+#### Šta radi `texBackground.texUnit(shaderProgram, "tex0", 0)`
+
+```cpp
+void Texture::texUnit(Shader& shader, const char* uniform, GLuint unitIndex)
+{
+    GLuint texUni = glGetUniformLocation(shader.ID, uniform);   // nađi uniformu "tex0"
+    shader.Activate();
+    glUniform1i(texUni, unitIndex);                             // upiši joj 0
+}
+```
+
+Upiše broj **0** u uniformu `tex0`. Isto kao `setInt("tex0", 0)`. Poziva se jednom, prije petlje, jer se vrijednost nikad ne mijenja.
+
+Jedna stvar zbunjuje: poziva se preko `texBackground`, ali **nema veze sa pozadinom**. Metoda `texUnit` ne koristi ništa iz `texBackground`, samo je „zakačena“ za klasu `Texture`, kao kod Gordana. Mogla se pozvati i preko `texCoin` ili `texBody`, a rezultat bi bio isti: `tex0 = 0`.
+
+#### Zašto onda svaki objekat ima svoju sliku
+
+Jer se **prije svakog crtanja** za jedinicu 0 veže druga slika:
+
+```cpp
+texBackground.Bind();   glDrawElements(...);   // jedinica 0 = pozadina → tex0 čita pozadinu
+texCoin.Bind();         glDrawElements(...);   // jedinica 0 = kovanica → tex0 čita kovanicu
+```
+
+`tex0` je cijelo vrijeme 0. Mijenja se samo slika koja je vezana za jedinicu 0.
+
+#### Ukratko
+
+- **`sampler2D`**: tip promjenljive za čitanje iz teksture. Vrijednost mu je broj teksturne jedinice.
+- **`tex0`**: naše ime za tu promjenljivu u fragment šejderu.
+- **`texUnit(..., "tex0", 0)`**: jednom upiše `tex0 = 0`, odnosno „čitaj iz jedinice 0“.
+- **`tex.Bind()`**: prije svakog crtanja stavi pravu sliku u jedinicu 0.
+
 ### Koordinate teksture
 
 Svakom verteksu se kaže kom delu slike odgovara, preko **koordinate teksture**. Ose na slici se zovu **u** (vodoravno, kao x) i **v** (uspravno, kao y). Zovu se drugačije da se ne pomešaju sa koordinatama ekrana. U OpenGL-u se iste ose zovu i **s** i **t** (otuda `GL_TEXTURE_WRAP_S` i `GL_TEXTURE_WRAP_T`).
@@ -532,156 +602,6 @@ Koordinate idu od (0, 0) za donji levi ugao slike do (1, 1) za gornji desni, bez
 Pojedinačni piksel teksture zove se **teksel**.
 
 Tekstura sama po sebi ne zna ništa o verteksima. Vezu između oblika i slike pravi **koordinata teksture** (u, v), koja se zadaje kao poseban atribut svakog verteksa, pored pozicije. Njom se kaže koja tačka slike pripada tom verteksu, gde (0, 0) označava donji levi, a (1, 1) gornji desni ugao slike. Vertex šejder prima ovu koordinatu kao ulazni atribut i prosleđuje je fragment šejderu kroz izlaznu promenljivu. Rasterizacija je potom interpolira, pa svaki fragment unutar oblika dobija svoju koordinatu na slici, srazmerno udaljenosti od verteksa. Fragment šejder pomoću funkcije `texture(sampler, koordinata)` uzorkuje boju slike na toj koordinati, uz zadato filtriranje. Koja slika se pri tome čita ne određuju verteksi, nego stanje OpenGL-a: tekstura se pre crtanja veže za teksturnu jedinicu (`glActiveTexture` i `glBindTexture`), a uniforma tipa `sampler2D` preko `glUniform1i` dobija broj te jedinice. Zato isti verteksi mogu da se koriste sa bilo kojom slikom, jer se menja samo tekstura vezana pre crtanja.
-
----
-
-### Kako tekstura "zna" za koji je verteks
-
-#### 1. Tekstura sama po sebi ne zna ništa o verteksima.
-
-Tekstura je samo slika u memoriji grafičke kartice: tabela teksela, bez ikakve informacije o tome na šta će se lepiti.
-
-```cpp
-unsigned int texture;
-glGenTextures(1, &texture);
-glBindTexture(GL_TEXTURE_2D, texture);
-glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
-```
-
-U ovom kodu nigde se ne pominju verteksi, oblik ni pozicija. Tekstura je samo napravljena i napunjena pikselima.
-
-#### 2. Vezu između oblika i slike pravi koordinata teksture (u, v), koja se zadaje kao poseban atribut svakog verteksa, pored pozicije.
-
-Svaki verteks pored pozicije dobija još dva broja:
-
-```cpp
-float vertices[] = {
-    // pozicija (x, y)    koordinata teksture (u, v)
-    -0.5f, -0.5f,         0.0f, 0.0f,
-     0.5f, -0.5f,         1.0f, 0.0f,
-     0.0f,  0.5f,         0.5f, 1.0f,
-};
-```
-
-To je drugi atribut, pa ga treba opisati VAO-u, na svojoj lokaciji:
-
-```cpp
-// atribut 0: pozicija
-glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
-glEnableVertexAttribArray(0);
-// atribut 1: koordinata teksture, počinje posle dva floata pozicije
-glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
-glEnableVertexAttribArray(1);
-```
-
-#### 3. Njom se kaže koja tačka slike pripada tom verteksu, gde (0, 0) označava donji levi, a (1, 1) gornji desni ugao slike.
-
-Za trougao iz primera:
-
-```
-slika:                              trougao:
-(0,1) ┌─────────●─────────┐ (1,1)            ● verteks 2 → (0.5, 1)
-      │      (0.5, 1)     │                 ╱ ╲
-      │                   │                ╱   ╲
-      │                   │               ╱     ╲
-(0,0) ●───────────────────● (1,0)        ●───────●
-                                verteks 0 → (0,0)  verteks 1 → (1,0)
-```
-
-- verteks 0 (dole levo) dobija donji levi ugao slike (0, 0),
-- verteks 1 (dole desno) dobija donji desni ugao slike (1, 0),
-- verteks 2 (vrh) dobija sredinu gornje ivice slike (0.5, 1).
-
-Koordinate su uvek od 0 do 1, bez obzira na to koliko je slika velika u pikselima.
-
-#### 4. Vertex šejder prima ovu koordinatu kao ulazni atribut i prosleđuje je fragment šejderu kroz izlaznu promenljivu.
-
-```glsl
-#version 330 core
-layout (location = 0) in vec2 aPos;
-layout (location = 1) in vec2 aTexCoord;   // ulaz: koordinata teksture verteksa
-
-out vec2 TexCoord;                         // izlaz za fragment šejder
-
-void main()
-{
-    gl_Position = vec4(aPos, 0.0, 1.0);
-    TexCoord = aTexCoord;                  // samo je prosledi dalje
-}
-```
-
-`location = 1` se poklapa sa prvim argumentom `glVertexAttribPointer(1, ...)` iz koraka 2. Vertex šejder sa koordinatom teksture ne radi ništa, samo je prenese.
-
-#### 5. Rasterizacija je potom interpolira, pa svaki fragment unutar oblika dobija svoju koordinatu na slici, srazmerno udaljenosti od verteksa.
-
-Vertex šejder je dao `TexCoord` samo za tri temena. Za svaki fragment unutar trougla rasterizacija napravi mešavinu te tri vrednosti:
-
-| Fragment | Dobijeni `TexCoord` |
-|---|---|
-| tačno na verteksu 0 | (0, 0) |
-| na sredini donje ivice, između verteksa 0 i 1 | (0.5, 0) |
-| na pola puta između verteksa 0 i vrha | (0.25, 0.5) |
-| u težištu trougla | otprilike (0.5, 0.33) |
-
-Svaki fragment tako "zna" koja tačka slike mu pripada, iako je niko nije zadao.
-
-#### 6. Fragment šejder pomoću funkcije texture(sampler, koordinata) uzorkuje boju slike na toj koordinati, uz zadato filtriranje.
-
-```glsl
-#version 330 core
-in vec2 TexCoord;                     // interpolirana koordinata za ovaj fragment
-out vec4 FragColor;
-
-uniform sampler2D ourTexture;         // tekstura iz koje se čita
-
-void main()
-{
-    FragColor = texture(ourTexture, TexCoord);
-}
-```
-
-`in vec2 TexCoord` je povezan sa `out vec2 TexCoord` iz vertex šejdera preko istog imena i tipa. `texture` vrati boju slike na tom mestu. Kako se boja računa kad koordinata ne pada tačno na centar teksela, određuje filtriranje, podešeno pri pravljenju teksture:
-
-```cpp
-glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-```
-
-#### 7. Koja slika se pri tome čita ne određuju verteksi, nego stanje OpenGL-a: tekstura se pre crtanja veže za teksturnu jedinicu, a uniforma tipa sampler2D preko glUniform1i dobija broj te jedinice.
-
-Jednom, pre petlje, sampler se poveže sa teksturnom jedinicom 0:
-
-```cpp
-glUseProgram(shaderProgram);
-glUniform1i(glGetUniformLocation(shaderProgram, "ourTexture"), 0);   // ourTexture čita iz jedinice 0
-```
-
-Pre crtanja se tekstura veže za tu jedinicu:
-
-```cpp
-glActiveTexture(GL_TEXTURE0);              // izaberi jedinicu 0
-glBindTexture(GL_TEXTURE_2D, texture);     // veži teksturu za nju
-glBindVertexArray(VAO);
-glDrawArrays(GL_TRIANGLES, 0, 3);
-```
-
-Lanac je: `ourTexture` → jedinica 0 → tekstura koja je u tom trenutku vezana za jedinicu 0.
-
-#### 8. Zato isti verteksi mogu da se koriste sa bilo kojom slikom, jer se menja samo tekstura vezana pre crtanja.
-
-```cpp
-glBindVertexArray(VAO);                    // isti verteksi
-
-glBindTexture(GL_TEXTURE_2D, textureDrvo);
-glDrawArrays(GL_TRIANGLES, 0, 3);          // trougao sa slikom drveta
-
-glBindTexture(GL_TEXTURE_2D, textureKamen);
-glDrawArrays(GL_TRIANGLES, 0, 3);          // isti trougao sa slikom kamena
-```
-
-Koordinate teksture u verteksima kažu **koji deo** slike ide gde. Vezivanje kaže **koja** slika. Pošto su to dve odvojene stvari, isti oblik može dobiti bilo koju sliku samo promenom `glBindTexture`.
-
----
 
 ### Obmotavanje (wrapping)
 
