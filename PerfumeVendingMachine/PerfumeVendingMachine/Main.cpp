@@ -34,10 +34,10 @@ const float PERFUME_COLORS[PERFUME_COUNT][3] = {
 const float MACHINE_W = 900.0f;
 const float MACHINE_H = 1000.0f;
 
-const float COIN_ANIM_TIME = 0.45f;
-const float CARD_MOVE_TIME = 0.3f;
-const float CARD_PROCESS_TIME = 1.0f;
-const float SPRAY_TIME = 1.5f;
+const float COIN_ANIM_TIME = 0.45f;   // coin flying into the slot
+const float CARD_MOVE_TIME = 0.3f;    // card moving to the reader - from the place where card is set, to the center of the card slot
+const float CARD_PROCESS_TIME = 1.0f; // card waiting at the reader
+const float SPRAY_TIME = 1.5f;       
 const float BUTTON_PRESS_TIME = 0.18f;
 const float ERROR_TIME = 0.6f;
 
@@ -67,18 +67,21 @@ enum Hand { HAND_EMPTY, HAND_COIN, HAND_CARD };
 // ---------------------------------------------------------------------------
 int screenW = 1920, screenH = 1080;
 
+// Whe re the machine is on the screen and how big it is (set in updateLayout)
 float machineScale = 1.0f;
 float machineLeft = 0.0f;
 float machineTop = 0.0f;
 
 MachineState state = STATE_IDLE;
 Hand hand = HAND_EMPTY;
-int selected = -1;
+int selected = -1; // index of the selected perfume, -1 if none
 int paid = 0;
 
+// Timers that count down to zero; while they are above zero something is shown
 float buttonPressTimer[PERFUME_COUNT] = { 0 };
 float errorTimer = 0.0f;
 
+// Animations: how long they have been running and where the object started
 bool coinAnimActive = false;
 float coinAnimT = 0.0f;
 float coinStartX = 0.0f, coinStartY = 0.0f;
@@ -93,7 +96,7 @@ float mouseX = 0.0f, mouseY = 0.0f;
 GLFWcursor* cursorBottle = nullptr;
 GLFWcursor* cursorCoin = nullptr;
 GLFWcursor* cursorCard = nullptr;
-Hand cursorHand = HAND_EMPTY;
+Hand cursorHand = HAND_EMPTY; // which cursor is set right now
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -104,10 +107,13 @@ int endProgram(std::string message) {
 	return -1;
 }
 
+// Goes from a to b as t goes from 0 to 1; every animation is built on this - SMOOTH from a to b
 float lerpf(float a, float b, float t) {
 	return a + (b - a) * t;
 }
 
+// Decides how big the machine is and where it stands, so it looks the same on any resolution.
+// The machine takes 94% of the screen height and leaves room on the right for the wallet.
 void updateLayout() {
 	machineScale = screenH * 0.94f / MACHINE_H;
 	float machineWidth = MACHINE_W * machineScale;
@@ -119,22 +125,27 @@ void updateLayout() {
 float toScreenX(float mx) { return machineLeft + mx * machineScale; }
 float toScreenY(float my) { return machineTop - my * machineScale; }
 
+// A part of the machine measured on machine_body.png, turned into a rectangle on the screen
 Rect machineRect(float x0, float y0, float x1, float y1) {
 	return Rect{ toScreenX((x0 + x1) / 2.0f), toScreenY((y0 + y1) / 2.0f),
 				 (x1 - x0) * machineScale, (y1 - y0) * machineScale };
 }
 
+// Center of the column of perfume i (bottle, nozzle and button are in the same column)
 float slotCenterX(int i) { return 130.0f + 160.0f * i; }
 
-Rect bottleRect(int i) { float c = slotCenterX(i); return machineRect(c - 47.5f, 172.0f, c + 47.5f, 362.0f); }
-Rect nozzleRect(int i) { float c = slotCenterX(i); return machineRect(c - 25.0f, 413.0f, c + 25.0f, 473.0f); }
-Rect buttonRect(int i) { float c = slotCenterX(i); return machineRect(c - 38.0f, 492.0f, c + 38.0f, 568.0f); }
+// Where each part of the machine is. Drawing and mouse clicks use the same functions,
+// so what the user sees is always exactly what can be clicked.
+Rect bottleRect(int i) { float c = slotCenterX(i); return machineRect(c - 47.5f, 172.0f, c + 47.5f, 362.0f); } // bottle at column i
+Rect nozzleRect(int i) { float c = slotCenterX(i); return machineRect(c - 25.0f, 413.0f, c + 25.0f, 473.0f); } // nozzle at column i
+Rect buttonRect(int i) { float c = slotCenterX(i); return machineRect(c - 38.0f, 492.0f, c + 38.0f, 568.0f); } // button at column i
 
 Rect showcaseRect() { return machineRect(50.0f, 130.0f, 850.0f, 400.0f); }
 Rect screenRect() { return machineRect(70.0f, 616.0f, 450.0f, 856.0f); }
 Rect coinSlotRect() { return machineRect(500.0f, 650.0f, 620.0f, 830.0f); }
 Rect cardReaderRect() { return machineRect(640.0f, 650.0f, 840.0f, 790.0f); }
 
+// The wallet is not a part of the machine, it is placed in the free space to the right of it
 Rect walletMatRect() {
 	float right = toScreenX(MACHINE_W);
 	float space = screenW - right;
@@ -142,12 +153,14 @@ Rect walletMatRect() {
 	return Rect{ right + space / 2.0f, screenH * 0.36f, w, screenH * 0.42f };
 }
 
+// Coin in the upper part of the wallet; the user picks it up from here
 Rect walletCoinRect() {
 	Rect mat = walletMatRect();
 	float size = (std::min)(screenH * 0.09f, mat.w * 0.5f);
 	return Rect{ mat.cx, mat.cy + mat.h * 0.22f, size, size };
 }
 
+// Card in the lower part of the wallet, keeping the 256x160 shape of the image
 Rect walletCardRect() {
 	Rect mat = walletMatRect();
 	float w = (std::min)(screenH * 0.16f, mat.w * 0.85f);
@@ -157,6 +170,9 @@ Rect walletCardRect() {
 // ---------------------------------------------------------------------------
 // Game logic
 // ---------------------------------------------------------------------------
+
+// While something is animating the machine ignores new actions,
+// so two things can never start at the same time
 bool isBusy() {
 	return coinAnimActive || state == STATE_CARD_PROCESSING || state == STATE_SPRAYING;
 }
@@ -165,12 +181,14 @@ void showError() {
 	errorTimer = ERROR_TIME;
 }
 
+// Back to the start after a purchase, ready for the next customer
 void resetMachine() {
 	state = STATE_IDLE;
 	selected = -1;
 	paid = 0;
 }
 
+// The perfume can be chosen or changed only before anything is paid
 void selectPerfume(int i) {
 	if (state == STATE_IDLE || state == STATE_SELECTED) {
 		selected = i;
@@ -186,6 +204,8 @@ void startSpray() {
 	sprayT = 0.0f;
 }
 
+// A button has two roles: before paying it selects the perfume,
+// after paying the button of the selected perfume starts the spray
 void pressButton(int i) {
 	buttonPressTimer[i] = BUTTON_PRESS_TIME;
 	if (isBusy()) return;
@@ -202,6 +222,7 @@ void pressButton(int i) {
 	}
 }
 
+// The coin only starts flying here; the money is added in update() when it reaches the slot
 void insertCoin() {
 	if (selected < 0 || paid >= PRICES[selected] || isBusy()) {
 		showError();
@@ -213,6 +234,7 @@ void insertCoin() {
 	coinStartY = mouseY;
 }
 
+// The card leaves the hand and goes to the reader; update() finishes the payment
 void useCard() {
 	if (selected < 0 || paid >= PRICES[selected] || isBusy()) {
 		showError();
@@ -225,6 +247,8 @@ void useCard() {
 	hand = HAND_EMPTY;
 }
 
+// GLFW gives the mouse in window coordinates with y going down;
+// this turns it into the same pixels that are used for drawing
 void updateMouse(GLFWwindow* window) {
 	double xpos, ypos;
 	glfwGetCursorPos(window, &xpos, &ypos);
@@ -235,11 +259,15 @@ void updateMouse(GLFWwindow* window) {
 	mouseY = (float)(screenH - ypos * screenH / winH);
 }
 
+// Moves the time of the program forward by dt. Timers run out, animations progress,
+// and when an animation ends the machine moves to its next phase.
+// Drawing only shows what this function decided.
 void update(float dt) {
 	for (int i = 0; i < PERFUME_COUNT; i++)
 		buttonPressTimer[i] = (std::max)(0.0f, buttonPressTimer[i] - dt);
 	errorTimer = (std::max)(0.0f, errorTimer - dt);
 
+	// Coin reached the slot: add the money, then either ready or waiting for more
 	if (coinAnimActive) {
 		coinAnimT += dt;
 		if (coinAnimT >= COIN_ANIM_TIME) {
@@ -252,6 +280,7 @@ void update(float dt) {
 		}
 	}
 
+	// Card finished: it pays whatever is left, no matter how many coins went in before
 	if (state == STATE_CARD_PROCESSING) {
 		cardT += dt;
 		if (cardT >= CARD_MOVE_TIME + CARD_PROCESS_TIME) {
@@ -260,6 +289,7 @@ void update(float dt) {
 		}
 	}
 
+	// Spray finished: the purchase is over
 	if (state == STATE_SPRAYING) {
 		sprayT += dt;
 		if (sprayT >= SPRAY_TIME)
@@ -270,6 +300,8 @@ void update(float dt) {
 // ---------------------------------------------------------------------------
 // Callbacks
 // ---------------------------------------------------------------------------
+
+// Esc closes the program in any state, keys 1-5 work like the five buttons
 void keyboardCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
 	if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
 		glfwSetWindowShouldClose(window, GLFW_TRUE);
@@ -278,30 +310,37 @@ void keyboardCallback(GLFWwindow* window, int key, int scancode, int action, int
 		pressButton(key - GLFW_KEY_1);
 }
 
+// Turns a click into an action, depending on what the user is holding and where they clicked
 void mouseCallback(GLFWwindow* window, int button, int action, int mods) {
 	if (action != GLFW_PRESS) return;
 	updateMouse(window);
 
+	// Right click puts back whatever is in the hand
 	if (button == GLFW_MOUSE_BUTTON_RIGHT) {
 		hand = HAND_EMPTY;
 		return;
 	}
 	if (button != GLFW_MOUSE_BUTTON_LEFT) return;
 
+	// Holding a coin: the slot takes it, a click anywhere else drops it
+	// and is then handled as a normal click (so a button can still be pressed)
 	if (hand == HAND_COIN) {
 		if (coinSlotRect().contains(mouseX, mouseY)) { insertCoin(); return; }
 		if (walletCoinRect().contains(mouseX, mouseY)) return;
 		hand = HAND_EMPTY;
 	}
+	// Holding the card: the reader takes it, a click on the wallet puts it back
 	if (hand == HAND_CARD) {
 		if (cardReaderRect().contains(mouseX, mouseY)) { useCard(); return; }
 		hand = HAND_EMPTY;
 		if (walletCardRect().contains(mouseX, mouseY)) return;
 	}
 
+	// Picking up from the wallet (the card is not there while it is at the reader)
 	if (walletCoinRect().contains(mouseX, mouseY)) { hand = HAND_COIN; return; }
 	if (walletCardRect().contains(mouseX, mouseY) && state != STATE_CARD_PROCESSING) { hand = HAND_CARD; return; }
 
+	// Buttons and bottles of the machine
 	for (int i = 0; i < PERFUME_COUNT; i++) {
 		if (buttonRect(i).contains(mouseX, mouseY)) { pressButton(i); return; }
 		if (bottleRect(i).contains(mouseX, mouseY)) {
@@ -316,6 +355,8 @@ void mouseCallback(GLFWwindow* window, int button, int action, int mods) {
 // ---------------------------------------------------------------------------
 Shader* gShader = nullptr;
 
+// Everything on the screen is the same unit square; these uniforms tell the shader
+// where to put it, how big it is and how transparent
 void setCommonUniforms(const Rect& r, float alpha, int shape) {
 	gShader->setVec2("uPos", r.cx, r.cy);
 	gShader->setVec2("uSize", r.w, r.h);
@@ -323,6 +364,8 @@ void setCommonUniforms(const Rect& r, float alpha, int shape) {
 	gShader->setInt("uShape", shape);
 }
 
+// Draws an image in a rectangle. The tint darkens or colors it (bottles, buttons, digits, spray),
+// and the UV rectangle picks a part of the image (one digit from the digit atlas).
 void drawTexture(Texture& tex, const Rect& r, float alpha = 1.0f,
 	float tr = 1.0f, float tg = 1.0f, float tb = 1.0f,
 	float u0 = 0.0f, float v0 = 0.0f, float us = 1.0f, float vs = 1.0f) {
@@ -334,6 +377,7 @@ void drawTexture(Texture& tex, const Rect& r, float alpha = 1.0f,
 	glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 }
 
+// Draws a rectangle of one color: shadow, wallet mat, red error flash
 void drawColor(const Rect& r, float red, float green, float blue, float alpha, int shape = 0) {
 	setCommonUniforms(r, 1.0f, shape);
 	gShader->setInt("uUseTexture", 0);
@@ -342,14 +386,16 @@ void drawColor(const Rect& r, float red, float green, float blue, float alpha, i
 	glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 }
 
-// Draws an image with a given height (in machine units), keeping its aspect ratio; returns the right edge
+// Text that never changes ("Price", "Paid", "RSD") is a ready image.
+// Draws it with a given height (in machine units), keeping its aspect ratio; returns the right edge
 float drawLabel(Texture& tex, float mx, float myCenter, float mh) {
 	float mw = mh * tex.width / (float)tex.height;
 	drawTexture(tex, machineRect(mx, myCenter - mh / 2, mx + mw, myCenter + mh / 2));
 	return mx + mw;
 }
 
-// Draws a number using the digit atlas "0123456789./" (12 cells); returns the right edge
+// Amounts change all the time, so they are built digit by digit
+// from the digit atlas "0123456789./" (12 cells); returns the right edge
 float drawNumber(Texture& digits, int value, float mx, float myCenter, float mh,
 	float tr, float tg, float tb) {
 	std::string s = std::to_string(value);
@@ -370,6 +416,7 @@ float drawNumber(Texture& digits, int value, float mx, float myCenter, float mh,
 // ---------------------------------------------------------------------------
 int main()
 {
+	// Window over the whole monitor with an OpenGL 3.3 core context
 	if (!glfwInit()) {
 		std::cout << "Failed to initialize GLFW." << std::endl;
 		return -1;
@@ -384,15 +431,18 @@ int main()
 	if (window == NULL) return endProgram("Failed to create window.");
 	glfwMakeContextCurrent(window);
 
+	// V-sync off, the frame limiter at the end of the loop keeps 75 FPS
 	glfwSwapInterval(0);
 	glfwSetKeyCallback(window, keyboardCallback);
 	glfwSetMouseButtonCallback(window, mouseCallback);
 
+	// Three cursors: the default perfume bottle, and the coin or card while holding them
 	cursorBottle = loadImageToCursor("res/cursor.png", 20, 3);
 	cursorCoin = loadImageToCursor("res/cursor_coin.png", 32, 32);
 	cursorCard = loadImageToCursor("res/cursor_card.png", 48, 30);
 	glfwSetCursor(window, cursorBottle);
 
+	// GLEW needs the context, so it comes after glfwMakeContextCurrent
 	if (glewInit() != GLEW_OK) return endProgram("Failed to initialize GLEW.");
 
 	glfwGetFramebufferSize(window, &screenW, &screenH);
@@ -403,6 +453,8 @@ int main()
 	Shader shaderProgram("default.vert", "default.frag");
 	gShader = &shaderProgram;
 
+	// The only shape in the program: a 1x1 square centered at (0,0), position + UV per vertex.
+	// Every element on the screen is this square, moved and scaled by uniforms.
 	GLfloat vertices[] = {
 		-0.5f, -0.5f,   0.0f, 0.0f,
 		 0.5f, -0.5f,   1.0f, 0.0f,
@@ -441,6 +493,7 @@ int main()
 	Texture texLabelRsd("res/label_rsd.png", GL_TEXTURE_2D, GL_TEXTURE0);
 	Texture texName("res/name_label.png", GL_TEXTURE_2D, GL_TEXTURE0);
 
+	// One bottle, button, pressed button and info screen per perfume; info_0 is "Choose a perfume"
 	std::vector<Texture> texBottles, texButtons, texButtonsPressed, texInfo;
 	texInfo.push_back(Texture("res/info_0.png", GL_TEXTURE_2D, GL_TEXTURE0));
 	for (int i = 1; i <= PERFUME_COUNT; i++) {
@@ -451,10 +504,12 @@ int main()
 		texInfo.push_back(Texture(("res/info_" + n + ".png").c_str(), GL_TEXTURE_2D, GL_TEXTURE0));
 	}
 
+	// All textures use unit 0 and the screen size never changes, so these are set once
 	texBackground.texUnit(shaderProgram, "tex0", 0);
 	shaderProgram.Activate();
 	shaderProgram.setVec2("uScreen", (float)screenW, (float)screenH);
 
+	// Transparency: a new pixel is mixed with what is already drawn, using its alpha
 	glClearColor(0.2f, 0.2f, 0.25f, 1.0f);
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -463,6 +518,7 @@ int main()
 
 	while (!glfwWindowShouldClose(window))
 	{
+		// Time since the last frame; capped so animations do not jump after a pause
 		double frameStart = glfwGetTime();
 		float dt = (float)(frameStart - lastFrame);
 		lastFrame = frameStart;
@@ -471,7 +527,7 @@ int main()
 		updateMouse(window);
 		update(dt);
 
-		// The cursor shows what the user is holding
+		// The cursor shows what the user is holding; it is changed only when that changes
 		if (hand != cursorHand) {
 			if (hand == HAND_COIN) glfwSetCursor(window, cursorCoin);
 			else if (hand == HAND_CARD) glfwSetCursor(window, cursorCard);
@@ -479,26 +535,27 @@ int main()
 			cursorHand = hand;
 		}
 
+		// The whole scene is drawn again every frame, from the back to the front
 		glClear(GL_COLOR_BUFFER_BIT);
 		shaderProgram.Activate();
 		VAO1.Bind();
 
 		float s = machineScale;
 
-		// Background and machine
+		// Background, shadow of the machine, machine
 		drawTexture(texBackground, Rect{ screenW / 2.0f, screenH / 2.0f, (float)screenW, (float)screenH });
 		Rect body = machineRect(0.0f, 0.0f, MACHINE_W, MACHINE_H);
 		drawColor(Rect{ body.cx + 16.0f * s, body.cy - 30.0f * s, body.w - 40.0f * s, body.h - 40.0f * s }, 0.0f, 0.0f, 0.0f, 0.3f);
 		drawTexture(texBody, body);
 
-		// Showcase: bottles (the not selected ones are darker), glass
+		// Showcase: bottles (the not selected ones are darker), then the glass in front of them
 		for (int i = 0; i < PERFUME_COUNT; i++) {
 			float shade = (selected >= 0 && i != selected) ? 0.6f : 1.0f;
 			drawTexture(texBottles[i], bottleRect(i), 1.0f, shade, shade, shade);
 		}
 		drawTexture(texShowcase, showcaseRect());
 
-		// Nozzles and buttons
+		// Nozzles and buttons; a pressed button is shown for a moment, the not selected ones are darker
 		for (int i = 0; i < PERFUME_COUNT; i++) {
 			drawTexture(texNozzle, nozzleRect(i));
 			Texture& btn = buttonPressTimer[i] > 0.0f ? texButtonsPressed[i] : texButtons[i];
@@ -506,14 +563,14 @@ int main()
 			drawTexture(btn, buttonRect(i), 1.0f, shade, shade, shade);
 		}
 
-		// Info screen
+		// Info screen: "Choose a perfume" or the description of the selected one, red flash on error
 		Rect scr = screenRect();
 		drawTexture(texScreen, scr);
 		drawTexture(texInfo[selected >= 0 ? selected + 1 : 0], scr);
 		if (errorTimer > 0.0f)
 			drawColor(scr, 0.9f, 0.1f, 0.1f, 0.35f * errorTimer / ERROR_TIME);
 
-		// Price and paid amount
+		// Price of the selected perfume and how much is paid so far
 		float rowPrice = 893.0f, rowPaid = 937.0f, labelH = 34.0f, digitH = 40.0f;
 		drawLabel(texLabelPrice, 74.0f, rowPrice, labelH);
 		if (selected >= 0) {
@@ -548,7 +605,8 @@ int main()
 			drawTexture(texCard, r);
 		}
 
-		// Spray: three clouds leave the nozzle one after another, grow and fade out
+		// Spray: three clouds in the color of the perfume leave the nozzle 0.2 s apart,
+		// one to the left, one straight and one to the right; each grows and fades out
 		if (state == STATE_SPRAYING) {
 			const float* c = PERFUME_COLORS[selected];
 			float tr = lerpf(1.0f, c[0], 0.45f), tg = lerpf(1.0f, c[1], 0.45f), tb = lerpf(1.0f, c[2], 0.45f);
@@ -563,14 +621,14 @@ int main()
 			}
 		}
 
-		// Wallet
+		// Wallet: the card is faded while it is in the hand or at the reader
 		Rect mat = walletMatRect();
 		drawColor(mat, 0.1f, 0.08f, 0.06f, 0.35f);
 		drawTexture(texCoin, walletCoinRect());
 		bool cardAway = hand == HAND_CARD || state == STATE_CARD_PROCESSING;
 		drawTexture(texCard, walletCardRect(), cardAway ? 0.25f : 1.0f);
 
-		// Semi-transparent name label in the top right corner
+		// Semi-transparent name label in the top right corner, drawn last so it is above everything
 		{
 			float margin = screenH * 0.02f;
 			float h = screenH * 0.045f;
@@ -582,6 +640,7 @@ int main()
 		glfwSwapBuffers(window);
 		glfwPollEvents();
 
+		// Frame limiter: wait until 1/75 s has passed since the frame started
 		while (glfwGetTime() - frameStart < TARGET_FRAME_TIME) {}
 	}
 
