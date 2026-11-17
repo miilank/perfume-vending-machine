@@ -361,7 +361,6 @@ void setCommonUniforms(const Rect& r, float alpha, int shape) {
 	gShader->setVec2("uPos", r.cx, r.cy);
 	gShader->setVec2("uSize", r.w, r.h);
 	gShader->setFloat("uAlpha", alpha);
-	gShader->setInt("uShape", shape);
 }
 
 // Draws an image in a rectangle. The tint darkens or colors it (bottles, buttons, digits, spray),

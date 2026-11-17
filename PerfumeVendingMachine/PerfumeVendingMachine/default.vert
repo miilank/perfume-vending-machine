@@ -4,8 +4,7 @@ layout (location = 0) in vec2 aPos; // corner of the 1x1 square, from -0.5 to 0.
 layout (location = 1) in vec2 aTex; // which corner of the image belongs to this corner, 0 to 1
 
 // Passed on to the fragment shader, interpolated across the square
-out vec2 texCoord;
-out vec2 localPos;
+out vec2 texCoord; // vert calculates only for 4 vertices, fragment for each pixel calculated by rasterizer(interpolation)
 
 uniform vec2 uScreen; // screen size in pixels
 uniform vec2 uPos;    // center of the element in pixels
@@ -21,7 +20,8 @@ void main()
 	vec2 ndc = pixel / uScreen * 2.0 - 1.0;
 	gl_Position = vec4(ndc, 0.0, 1.0);
 
-	// Normally the whole image; for a digit only its cell in the digit atlas
+	// what part of the image is in this coordinate
+	// xy - what part of the image i want, zw is width and height
+	// 2 cases: the same as aTex, and atlas
 	texCoord = uUVRect.xy + aTex * uUVRect.zw;
-	localPos = aPos;
 }
