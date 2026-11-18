@@ -1,6 +1,6 @@
 # Teorija: osnove OpenGL-a
 
-Ovaj fajl sadrži teoriju na kojoj se zasniva projekat.
+Ovaj fajl sadrži osnove OpenGL-a na kojima se zasnivaju oba projekta, 2D i 3D. Ono što je novo u 3D projektu objašnjeno je u [learnopengl_2.md](../../3D/docs/learnopengl_2.md).
 
 ## OpenGL
 
@@ -220,9 +220,9 @@ Koraci se izvršavaju na grafičkoj kartici, paralelno, na hiljadama malih jezga
 | Primitiv | Kako grupiše verteksе 0, 1, 2, 3 |
 |---|---|
 | `GL_POINTS` | 4 tačke |
-| `GL_LINES` | linije 0–1 i 2–3 |
-| `GL_LINE_STRIP` | 0–1–2–3 |
-| `GL_LINE_LOOP` | 0–1–2–3–0 |
+| `GL_LINES` | linije 0-1 i 2-3 |
+| `GL_LINE_STRIP` | 0-1-2-3 |
+| `GL_LINE_LOOP` | 0-1-2-3-0 |
 | `GL_TRIANGLES` | trougao 0-1-2 (svaka tri verteksa su jedan trougao) |
 | `GL_TRIANGLE_STRIP` | 0-1-2 i 1-2-3 |
 | `GL_TRIANGLE_FAN` | 0-1-2 i 0-2-3 (svi dele prvi verteks) |
@@ -433,19 +433,19 @@ Fragment je predlog boje za taj piksel, koji dolazi od jednog objekta koji se up
 
 #### Primer na jednoj ivici
 
-Donja ivica kvadrata ide od verteksa 0 (`localPos.x = -0.5`) do verteksa 1 (`localPos.x = 0.5`):
+Donja ivica kvadrata ide od verteksa 0 (`texCoord.x = 0`) do verteksa 1 (`texCoord.x = 1`):
 
 ```
 verteks 0                                              verteks 1
    ●──────────────●──────────────●──────────────●──────────────●
- -0.5          -0.25             0            0.25            0.5
+   0             0.25           0.5            0.75            1
                (1/4 puta)    (pola puta)    (3/4 puta)
 ```
 
-- piksel na samom levom kraju dobija -0.5 (cela vrednost verteksa 0),
-- piksel na četvrtini puta dobija -0.25 (3/4 od verteksa 0 i 1/4 od verteksa 1),
-- piksel na pola puta dobija 0 (pola od jednog i pola od drugog),
-- piksel na desnom kraju dobija 0.5.
+- piksel na samom levom kraju dobija 0 (cela vrednost verteksa 0),
+- piksel na četvrtini puta dobija 0.25 (3/4 od verteksa 0 i 1/4 od verteksa 1),
+- piksel na pola puta dobija 0.5 (pola od jednog i pola od drugog),
+- piksel na desnom kraju dobija 1.
 
 Vrednost se menja **ravnomerno**, kao na lenjiru.
 
@@ -531,16 +531,16 @@ Idemo redom: prvo `sampler2D`, pa `tex0`, pa ta linija u `main`.
 uniform sampler2D tex0;
 ```
 
-Ovo je deklaracija promjenljive, kao `int broj;` u C++-u:
-- `uniform`: vrijednost dolazi iz C++-a,
-- **`sampler2D`**: **tip** promjenljive, poseban GLSL tip za čitanje iz 2D teksture,
+Ovo je deklaracija promenljive, kao `int broj;` u C++-u:
+- `uniform`: vrednost dolazi iz C++-a,
+- **`sampler2D`**: **tip** promenljive, poseban GLSL tip za čitanje iz 2D teksture,
 - **`tex0`**: **ime** koje smo sami izabrali. Moglo je biti `slika`, `ourTexture` ili bilo šta drugo. „tex“ od texture, „0“ jer čita iz jedinice 0.
 
-#### Šta je vrijednost `sampler2D` promjenljive
+#### Šta je vrednost `sampler2D` promenljive
 
-Nije sama slika. Vrijednost je samo **broj teksturne jedinice**: „čitaj iz jedinice 0“.
+Nije sama slika. Vrednost je samo **broj teksturne jedinice**: „čitaj iz jedinice 0“.
 
-Teksturna jedinica je mjesto za koje se tekstura veže prije crtanja. Kod nas se sve teksture vežu za jedinicu 0 (`GL_TEXTURE0`), u `drawTexture`:
+Teksturna jedinica je mesto za koje se tekstura veže pre crtanja. Kod nas se sve teksture vežu za jedinicu 0 (`GL_TEXTURE0`), u `drawTexture`:
 
 ```cpp
 tex.Bind();   // glActiveTexture(GL_TEXTURE0) + glBindTexture(GL_TEXTURE_2D, ID)
@@ -549,7 +549,7 @@ tex.Bind();   // glActiveTexture(GL_TEXTURE0) + glBindTexture(GL_TEXTURE_2D, ID)
 Lanac je:
 
 ```
-tex0 (vrijednost 0)  →  teksturna jedinica 0  →  slika koja je upravo vezana (npr. coin.png)
+tex0 (vrednost 0)  →  teksturna jedinica 0  →  slika koja je upravo vezana (npr. coin.png)
 ```
 
 #### Kako se koristi u šejderu
@@ -558,7 +558,7 @@ tex0 (vrijednost 0)  →  teksturna jedinica 0  →  slika koja je upravo vezana
 color = texture(tex0, texCoord) * vec4(uTint, 1.0);
 ```
 
-`texture(tex0, texCoord)` znači: „iz teksture na koju pokazuje `tex0`, uzmi boju na mjestu `texCoord`“. Pošto `tex0` pokazuje na jedinicu 0, čita se slika koja je u tom trenutku vezana za jedinicu 0.
+`texture(tex0, texCoord)` znači: „iz teksture na koju pokazuje `tex0`, uzmi boju na mestu `texCoord`“. Pošto `tex0` pokazuje na jedinicu 0, čita se slika koja je u tom trenutku vezana za jedinicu 0.
 
 #### Šta radi `texBackground.texUnit(shaderProgram, "tex0", 0)`
 
@@ -571,27 +571,27 @@ void Texture::texUnit(Shader& shader, const char* uniform, GLuint unitIndex)
 }
 ```
 
-Upiše broj **0** u uniformu `tex0`. Isto kao `setInt("tex0", 0)`. Poziva se jednom, prije petlje, jer se vrijednost nikad ne mijenja.
+Upiše broj **0** u uniformu `tex0`. Isto kao `setInt("tex0", 0)`. Poziva se jednom, pre petlje, jer se vrednost nikad ne menja.
 
 Jedna stvar zbunjuje: poziva se preko `texBackground`, ali **nema veze sa pozadinom**. Metoda `texUnit` ne koristi ništa iz `texBackground`, samo je „zakačena“ za klasu `Texture`, kao kod Gordana. Mogla se pozvati i preko `texCoin` ili `texBody`, a rezultat bi bio isti: `tex0 = 0`.
 
 #### Zašto onda svaki objekat ima svoju sliku
 
-Jer se **prije svakog crtanja** za jedinicu 0 veže druga slika:
+Jer se **pre svakog crtanja** za jedinicu 0 veže druga slika:
 
 ```cpp
 texBackground.Bind();   glDrawElements(...);   // jedinica 0 = pozadina → tex0 čita pozadinu
 texCoin.Bind();         glDrawElements(...);   // jedinica 0 = kovanica → tex0 čita kovanicu
 ```
 
-`tex0` je cijelo vrijeme 0. Mijenja se samo slika koja je vezana za jedinicu 0.
+`tex0` je celo vreme 0. Menja se samo slika koja je vezana za jedinicu 0.
 
 #### Ukratko
 
-- **`sampler2D`**: tip promjenljive za čitanje iz teksture. Vrijednost mu je broj teksturne jedinice.
-- **`tex0`**: naše ime za tu promjenljivu u fragment šejderu.
+- **`sampler2D`**: tip promenljive za čitanje iz teksture. Vrednost mu je broj teksturne jedinice.
+- **`tex0`**: naše ime za tu promenljivu u fragment šejderu.
 - **`texUnit(..., "tex0", 0)`**: jednom upiše `tex0 = 0`, odnosno „čitaj iz jedinice 0“.
-- **`tex.Bind()`**: prije svakog crtanja stavi pravu sliku u jedinicu 0.
+- **`tex.Bind()`**: pre svakog crtanja stavi pravu sliku u jedinicu 0.
 
 ### Koordinate teksture
 
