@@ -2,6 +2,55 @@
 
 Ovaj fajl sadrži osnove OpenGL-a na kojima se zasnivaju oba projekta, 2D i 3D. Ono što je novo u 3D projektu objašnjeno je u [learnopengl_2.md](../../3D/docs/learnopengl_2.md).
 
+## Sadržaj
+
+- [OpenGL](#opengl)
+- [GLFW](#glfw)
+- [GLEW](#glew)
+- [Mašina stanja (kontekst)](#mašina-stanja-kontekst)
+- [Objekti, id i tabela](#objekti-id-i-tabela)
+- [Slotovi i vezivanje](#slotovi-i-vezivanje)
+  - [Razvezivanje ne briše ništa](#razvezivanje-ne-briše-ništa)
+  - [Zašto je to korisno](#zašto-je-to-korisno)
+  - [Lanac ukratko](#lanac-ukratko)
+- [Prozor i render petlja](#prozor-i-render-petlja)
+  - [Kontekst](#kontekst)
+  - [Viewport](#viewport)
+  - [Render petlja](#render-petlja)
+  - [Dvostruki bafer](#dvostruki-bafer-double-buffering)
+  - [Brisanje ekrana](#brisanje-ekrana)
+  - [Callback i polling](#callback-i-polling)
+  - [V-sync](#v-sync)
+- [Grafički pajplajn](#grafički-pajplajn)
+  - [Primitivi](#primitivi)
+  - [Normalizovane koordinate uređaja (NDC)](#normalizovane-koordinate-uređaja-ndc)
+- [Ulaz verteksa](#ulaz-verteksa)
+  - [VBO](#vbo-vertex-buffer-object)
+  - [EBO](#ebo-element-buffer-object)
+  - [VAO](#vao-vertex-array-object)
+  - [Stride i offset](#stride-i-offset)
+  - [Kako VBO komunicira sa šejderom](#kako-vbo-komunicira-sa-šejderom)
+- [Šejderi](#šejderi)
+  - [Vertex šejder](#vertex-šejder)
+  - [Fragment šejder](#fragment-šejder)
+  - [Veza vertex i fragment šejdera](#veza-vertex-i-fragment-šejdera)
+  - [Interpolacija](#interpolacija)
+  - [Uniforme](#uniforme)
+  - [Shader program](#shader-program)
+- [Providnost (blending)](#providnost-blending)
+- [Teksture](#teksture)
+  - [Koordinate teksture](#koordinate-teksture)
+  - [Obmotavanje](#obmotavanje-wrapping)
+  - [Filtriranje](#filtriranje)
+  - [Mipmape](#mipmape)
+  - [Učitavanje slike: stb_image](#učitavanje-slike-stb_image)
+  - [Okretanje slike](#okretanje-slike)
+  - [Generisanje teksture](#generisanje-teksture)
+  - [Sampler i teksturne jedinice](#sampler-i-teksturne-jedinice)
+  - [Providnost teksture](#providnost-teksture)
+  - [Atlas tekstura](#atlas-tekstura)
+- [Brisanje resursa](#brisanje-resursa)
+
 ## OpenGL
 
 OpenGL nije biblioteka sa gotovim kodom, već **specifikacija**: dokument koji propisuje šta svaka funkcija treba da radi (ime, parametri, rezultat), ali ne i kako. Stvarnu implementaciju pišu proizvođači grafičkih kartica (NVIDIA, AMD, Intel) u svojim drajverima. **Kada moj C++ kod pozove OpenGL funkciju, poziv stiže do drajvera, koji ga prevodi u komande koje razume konkretan GPU.** Implementacije se mogu razlikovati od proizvođača do proizvođača, ali rezultat mora biti onakav kako specifikacija propisuje. Zato su čudno ponašanje i greške u OpenGL-u obično greške drajvera i rešavaju se njegovim ažuriranjem.
@@ -521,78 +570,6 @@ Za piksel sa alfom 0.6: 60% nove boje i 40% one ispod. Pošto se meša sa onim �
 
 **Koja** slika se koristi određuje `glBindTexture` pre crtanja, a ne verteksi.
 
-### Detalji
-
-Idemo redom: prvo `sampler2D`, pa `tex0`, pa ta linija u `main`.
-
-#### `sampler2D` je tip, a `tex0` je ime
-
-```glsl
-uniform sampler2D tex0;
-```
-
-Ovo je deklaracija promenljive, kao `int broj;` u C++-u:
-- `uniform`: vrednost dolazi iz C++-a,
-- **`sampler2D`**: **tip** promenljive, poseban GLSL tip za čitanje iz 2D teksture,
-- **`tex0`**: **ime** koje smo sami izabrali. Moglo je biti `slika`, `ourTexture` ili bilo šta drugo. „tex“ od texture, „0“ jer čita iz jedinice 0.
-
-#### Šta je vrednost `sampler2D` promenljive
-
-Nije sama slika. Vrednost je samo **broj teksturne jedinice**: „čitaj iz jedinice 0“.
-
-Teksturna jedinica je mesto za koje se tekstura veže pre crtanja. Kod nas se sve teksture vežu za jedinicu 0 (`GL_TEXTURE0`), u `drawTexture`:
-
-```cpp
-tex.Bind();   // glActiveTexture(GL_TEXTURE0) + glBindTexture(GL_TEXTURE_2D, ID)
-```
-
-Lanac je:
-
-```
-tex0 (vrednost 0)  →  teksturna jedinica 0  →  slika koja je upravo vezana (npr. coin.png)
-```
-
-#### Kako se koristi u šejderu
-
-```glsl
-color = texture(tex0, texCoord) * vec4(uTint, 1.0);
-```
-
-`texture(tex0, texCoord)` znači: „iz teksture na koju pokazuje `tex0`, uzmi boju na mestu `texCoord`“. Pošto `tex0` pokazuje na jedinicu 0, čita se slika koja je u tom trenutku vezana za jedinicu 0.
-
-#### Šta radi `texBackground.texUnit(shaderProgram, "tex0", 0)`
-
-```cpp
-void Texture::texUnit(Shader& shader, const char* uniform, GLuint unitIndex)
-{
-    GLuint texUni = glGetUniformLocation(shader.ID, uniform);   // nađi uniformu "tex0"
-    shader.Activate();
-    glUniform1i(texUni, unitIndex);                             // upiši joj 0
-}
-```
-
-Upiše broj **0** u uniformu `tex0`. Isto kao `setInt("tex0", 0)`. Poziva se jednom, pre petlje, jer se vrednost nikad ne menja.
-
-Jedna stvar zbunjuje: poziva se preko `texBackground`, ali **nema veze sa pozadinom**. Metoda `texUnit` ne koristi ništa iz `texBackground`, samo je „zakačena“ za klasu `Texture`, kao kod Gordana. Mogla se pozvati i preko `texCoin` ili `texBody`, a rezultat bi bio isti: `tex0 = 0`.
-
-#### Zašto onda svaki objekat ima svoju sliku
-
-Jer se **pre svakog crtanja** za jedinicu 0 veže druga slika:
-
-```cpp
-texBackground.Bind();   glDrawElements(...);   // jedinica 0 = pozadina → tex0 čita pozadinu
-texCoin.Bind();         glDrawElements(...);   // jedinica 0 = kovanica → tex0 čita kovanicu
-```
-
-`tex0` je celo vreme 0. Menja se samo slika koja je vezana za jedinicu 0.
-
-#### Ukratko
-
-- **`sampler2D`**: tip promenljive za čitanje iz teksture. Vrednost mu je broj teksturne jedinice.
-- **`tex0`**: naše ime za tu promenljivu u fragment šejderu.
-- **`texUnit(..., "tex0", 0)`**: jednom upiše `tex0 = 0`, odnosno „čitaj iz jedinice 0“.
-- **`tex.Bind()`**: pre svakog crtanja stavi pravu sliku u jedinicu 0.
-
 ### Koordinate teksture
 
 Svakom verteksu se kaže kom delu slike odgovara, preko **koordinate teksture**. Ose na slici se zovu **u** (vodoravno, kao x) i **v** (uspravno, kao y). Zovu se drugačije da se ne pomešaju sa koordinatama ekrana. U OpenGL-u se iste ose zovu i **s** i **t** (otuda `GL_TEXTURE_WRAP_S` i `GL_TEXTURE_WRAP_T`).
@@ -600,8 +577,6 @@ Svakom verteksu se kaže kom delu slike odgovara, preko **koordinate teksture**.
 Koordinate idu od (0, 0) za donji levi ugao slike do (1, 1) za gornji desni, bez obzira na veličinu slike u pikselima. Uzimanje boje iz slike na određenoj koordinati zove se **uzorkovanje** (sampling). Rasterizacija interpolira koordinate za svaki fragment.
 
 Pojedinačni piksel teksture zove se **teksel**.
-
-Tekstura sama po sebi ne zna ništa o verteksima. Vezu između oblika i slike pravi **koordinata teksture** (u, v), koja se zadaje kao poseban atribut svakog verteksa, pored pozicije. Njom se kaže koja tačka slike pripada tom verteksu, gde (0, 0) označava donji levi, a (1, 1) gornji desni ugao slike. Vertex šejder prima ovu koordinatu kao ulazni atribut i prosleđuje je fragment šejderu kroz izlaznu promenljivu. Rasterizacija je potom interpolira, pa svaki fragment unutar oblika dobija svoju koordinatu na slici, srazmerno udaljenosti od verteksa. Fragment šejder pomoću funkcije `texture(sampler, koordinata)` uzorkuje boju slike na toj koordinati, uz zadato filtriranje. Koja slika se pri tome čita ne određuju verteksi, nego stanje OpenGL-a: tekstura se pre crtanja veže za teksturnu jedinicu (`glActiveTexture` i `glBindTexture`), a uniforma tipa `sampler2D` preko `glUniform1i` dobija broj te jedinice. Zato isti verteksi mogu da se koriste sa bilo kojom slikom, jer se menja samo tekstura vezana pre crtanja.
 
 ### Obmotavanje (wrapping)
 
@@ -709,6 +684,78 @@ glUniform1i(glGetUniformLocation(program, "tex0"), 0);   // tex0 čita iz jedini
 ```
 
 Jedinica 0 je podrazumevana, ali je ne postavljaju svi drajveri, pa je bolje postaviti je eksplicitno.
+
+> [!NOTE]
+> **Kako to izgleda u 2D projektu**
+>
+> **`sampler2D` je tip, a `tex0` je ime**
+>
+> ```glsl
+> uniform sampler2D tex0;
+> ```
+>
+> Ovo je deklaracija promenljive, kao `int broj;` u C++-u:
+> - `uniform`: vrednost dolazi iz C++-a,
+> - **`sampler2D`**: **tip** promenljive, poseban GLSL tip za čitanje iz 2D teksture,
+> - **`tex0`**: **ime** koje smo sami izabrali. Moglo je biti `slika`, `ourTexture` ili bilo šta drugo. „tex“ od texture, „0“ jer čita iz jedinice 0.
+>
+> **Šta je vrednost `sampler2D` promenljive**
+>
+> Nije sama slika. Vrednost je samo **broj teksturne jedinice**: „čitaj iz jedinice 0“.
+>
+> Teksturna jedinica je mesto za koje se tekstura veže pre crtanja. U projektu se sve teksture vežu za jedinicu 0 (`GL_TEXTURE0`), u `drawTexture`:
+>
+> ```cpp
+> tex.Bind();   // glActiveTexture(GL_TEXTURE0) + glBindTexture(GL_TEXTURE_2D, ID)
+> ```
+>
+> Lanac je:
+>
+> ```
+> tex0 (vrednost 0)  →  teksturna jedinica 0  →  slika koja je upravo vezana (npr. coin.png)
+> ```
+>
+> **Kako se koristi u šejderu**
+>
+> ```glsl
+> color = texture(tex0, texCoord) * vec4(uTint, 1.0);
+> ```
+>
+> `texture(tex0, texCoord)` znači: „iz teksture na koju pokazuje `tex0`, uzmi boju na mestu `texCoord`“. Pošto `tex0` pokazuje na jedinicu 0, čita se slika koja je u tom trenutku vezana za jedinicu 0.
+>
+> **Šta radi `texBackground.texUnit(shaderProgram, "tex0", 0)`**
+>
+> ```cpp
+> void Texture::texUnit(Shader& shader, const char* uniform, GLuint unitIndex)
+> {
+>     GLuint texUni = glGetUniformLocation(shader.ID, uniform);   // nađi uniformu "tex0"
+>     shader.Activate();
+>     glUniform1i(texUni, unitIndex);                             // upiši joj 0
+> }
+> ```
+>
+> Upiše broj **0** u uniformu `tex0`. Isto kao `setInt("tex0", 0)`. Poziva se jednom, pre petlje, jer se vrednost nikad ne menja.
+>
+> Jedna stvar zbunjuje: poziva se preko `texBackground`, ali **nema veze sa pozadinom**. Metoda `texUnit` ne koristi ništa iz `texBackground`, samo je „zakačena“ za klasu `Texture`, kao na vežbama. Mogla se pozvati i preko `texCoin` ili `texBody`, a rezultat bi bio isti: `tex0 = 0`.
+>
+> **Zašto onda svaki objekat ima svoju sliku**
+>
+> Jer se **pre svakog crtanja** za jedinicu 0 veže druga slika:
+>
+> ```cpp
+> texBackground.Bind();   glDrawElements(...);   // jedinica 0 = pozadina → tex0 čita pozadinu
+> texCoin.Bind();         glDrawElements(...);   // jedinica 0 = kovanica → tex0 čita kovanicu
+> ```
+>
+> `tex0` je celo vreme 0. Menja se samo slika koja je vezana za jedinicu 0.
+>
+> **Ukratko**
+>
+> - **`sampler2D`**: tip promenljive za čitanje iz teksture. Vrednost mu je broj teksturne jedinice.
+> - **`tex0`**: naše ime za tu promenljivu u fragment šejderu.
+> - **`texUnit(..., "tex0", 0)`**: jednom upiše `tex0 = 0`, odnosno „čitaj iz jedinice 0“.
+> - **`tex.Bind()`**: pre svakog crtanja stavi pravu sliku u jedinicu 0.
+>
 
 ### Providnost teksture
 
