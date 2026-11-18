@@ -2,8 +2,8 @@
 
 Projekat iz predmeta Računarska grafika, u dve verzije, dva odvojena projekta:
 
-- [2D](2D/README.md) - OpenGL 3.3, 2D simulacija
-- [3D](3D/README.md) - OpenGL 3.3, 3D simulacija
+- [2D](2D) - OpenGL 3.3, 2D simulacija
+- [3D](3D) - OpenGL 3.3, 3D simulacija
 
 #### Teorija
 
